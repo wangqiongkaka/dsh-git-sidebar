@@ -203,16 +203,21 @@ export function GitView(props: {
   /** Change-group folding is intentionally local to this mounted Git view. */
   const [expandedSections, setExpandedSections] = useState({ changes: true, stash: false, tag: false, history: true })
 
+  /** How much history is on screen, so a background refresh re-reads that much, not just page one. */
+  const logCountRef = useRef(0)
+  logCountRef.current = logEntries.length
+
   /** Reload everything; `silent` skips the loading placeholder (background polls). */
   const refresh = useCallback(async (silent = false): Promise<void> => {
     if (!silent) setLoading(true)
     setError(null)
+    const logCount = Math.max(LOG_BATCH, logCountRef.current)
     try {
       const [statusResult, branchResult, logResult, worktreeResult, operationResult, stashResult, tagResult] = await Promise.all([
         api.gitStatus(scope),
         api.gitBranch(scope).catch(() => ({ current: '', names: [] as string[] })),
-        // The first history page only; the rest arrives via "load more".
-        api.gitLog(scope, LOG_BATCH, 0).catch(() => [] as GitLogEntry[]),
+        // Every page already loaded; further pages arrive via "load more".
+        api.gitLog(scope, logCount, 0).catch(() => [] as GitLogEntry[]),
         api.gitWorktrees(scope).catch(() => ({ entries: [] as GitWorktree[], pathPrefix: '' })),
         api.gitOperation(scope).catch(() => ({ operation: null })),
         api.gitStashList(scope).catch(() => ({ entries: [] as GitStashEntry[] })),
@@ -221,7 +226,7 @@ export function GitView(props: {
       setStatus(statusResult)
       setBranchNames(branchResult.names)
       setLogEntries(logResult)
-      setLogEnded(logResult.length < LOG_BATCH)
+      setLogEnded(logResult.length < logCount)
       setWorktrees(worktreeResult.entries)
       setWorktreePathPrefix(worktreeResult.pathPrefix)
       setOperation(operationResult.operation)
@@ -244,7 +249,7 @@ export function GitView(props: {
   // visible, and re-read when the window regains focus. Skipped mid-operation
   // so a poll cannot race a running git command's own refresh.
   const busyRef = useRef(busy)
-  busyRef.current = busy
+  busyRef.current = busy || logLoadingMore
   useEffect(() => {
     const tick = (): void => {
       if (document.visibilityState === 'visible' && !busyRef.current) void refresh(true)
