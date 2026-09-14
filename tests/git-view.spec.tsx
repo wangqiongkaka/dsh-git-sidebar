@@ -57,6 +57,13 @@ function renderGitView(): { container: HTMLDivElement; root: Root } {
   return { container, root }
 }
 
+/** List actions (stage all, stash, new tag, discard all) live in the "…" menu. */
+function openMoreMenu(): void {
+  const anchor = [...document.querySelectorAll<HTMLButtonElement>('button')]
+    .find(button => button.getAttribute('aria-label') === 'Branch actions' || button.getAttribute('aria-label') === '分支操作')!
+  act(() => { anchor.click() })
+}
+
 /** Stash and Tag start folded; open one by its list id prefix. */
 function expandSection(container: HTMLElement, prefix: string): void {
   const toggle = container.querySelector<HTMLButtonElement>(`button[aria-controls^="${prefix}"]`)!
@@ -131,6 +138,7 @@ describe('GitView change groups', () => {
     const { container, root } = renderGitView()
     try {
       await flush()
+      openMoreMenu()
       expect(discardButtons()).toHaveLength(1)
       act(() => { discardButtons()[0]!.click() })
       expect(document.body.textContent).toContain('2')
@@ -145,7 +153,8 @@ describe('GitView change groups', () => {
       expect(container.textContent).not.toContain('staged.ts')
       expect(container.textContent).not.toContain('unstaged.ts')
       expect(container.textContent).toContain('new.ts')
-      expect(discardButtons()).toHaveLength(0)
+      openMoreMenu()
+      expect(discardButtons()[0]!.disabled).toBe(true)
     } finally {
       act(() => { root.unmount() })
       container.remove()
@@ -157,6 +166,7 @@ describe('GitView change groups', () => {
     const { container, root } = renderGitView()
     try {
       await flush()
+      openMoreMenu()
       act(() => { discardButtons()[0]!.click() })
       const confirm = discardButtons().at(-1)!
       await act(async () => { confirm.click(); await Promise.resolve() })
@@ -191,7 +201,7 @@ describe('GitView stash', () => {
     try {
       await flush()
       expandSection(container, 'git-stash-entries')
-      expect(container.textContent).toContain('Stash (2)')
+      expect(container.textContent).toMatch(/Stash\s*2/)
       expect(container.textContent).toContain('stash@{0}')
       expect(container.textContent).toContain('WIP on main: 1a2b3c4 newest')
       expect(container.textContent).toContain('stash@{1}')
@@ -212,6 +222,7 @@ describe('GitView stash', () => {
     const { container, root } = renderGitView()
     try {
       await flush()
+      openMoreMenu()
       expect(stashSaveButton().disabled).toBe(true)
     } finally {
       act(() => { root.unmount() })
@@ -223,6 +234,7 @@ describe('GitView stash', () => {
     const { container, root } = renderGitView()
     try {
       await flush()
+      openMoreMenu()
       expect(stashSaveButton().disabled).toBe(false)
       await act(async () => { stashSaveButton().click(); await Promise.resolve() })
       await flush()
@@ -282,6 +294,7 @@ describe('GitView stash errors', () => {
       expect(stashSection(container).contains(shown[0]!)).toBe(true)
 
       // A later successful stash clears it.
+      openMoreMenu()
       await act(async () => { stashSaveButton().click(); await Promise.resolve() })
       await flush()
       expect(container.textContent).not.toContain('pop conflicted')
@@ -323,7 +336,7 @@ describe('GitView tags', () => {
     try {
       await flush()
       expandSection(container, 'git-tag-entries')
-      expect(container.textContent).toContain('Tag (2)')
+      expect(container.textContent).toMatch(/Tag\s*2/)
       const rows = [...container.querySelectorAll('[id^="git-tag-entries-"] button')].map(node => node.textContent ?? '')
       expect(rows[0]).toContain('v0.2.0')
       expect(rows[0]).toContain('second release')
@@ -340,6 +353,7 @@ describe('GitView tags', () => {
     const { container, root } = renderGitView()
     try {
       await flush()
+      openMoreMenu()
       act(() => { labelledButton('New tag', '新建 Tag').click() })
       const create = labelledButton('Create', '创建')
       expect(create.disabled).toBe(true)
@@ -393,6 +407,7 @@ describe('GitView tags', () => {
     const { container, root } = renderGitView()
     try {
       await flush()
+      openMoreMenu()
       act(() => { labelledButton('New tag', '新建 Tag').click() })
       typeInto(tagInput('v1.2.0'), 'bad name')
       await act(async () => { labelledButton('Create', '创建').click(); await Promise.resolve() })
