@@ -27,7 +27,7 @@ export function apply(ctx: Context): void {
   })
   ctx.effect(() => ctx.sidebarRightTabs.register({
     id: 'dsh-git-sidebar', kind: 'dsh-git', title: () => t('git'),
-    guide: [{ order: 20, title: () => t('git'), icon: IconBranchOutline16 }],
+    guide: [{ order: 20, title: () => t('git'), description: () => t('gitGuideDesc'), icon: IconBranchOutline16 }],
   }))
   ctx.effect(() => ctx.sidebarRightTabs.register({
     id: 'dsh-git-sidebar/diff', kind: 'dsh-git-diff',
@@ -49,6 +49,14 @@ export function apply(ctx: Context): void {
       onOpenFile={async path => {
         const result = await api.gitPath(scope, path)
         tab.actions.openResource(sessionFileAddress(sessionId, result.path))
+      }}
+      onPrompt={async text => {
+        const scoped = ctx.sessions.scope(sessionId)
+        const session = scoped === undefined ? undefined : ctx.sessions.sessionOf(scoped)
+        if (session === undefined) throw new Error('session unavailable')
+        const handle = session.beginSubmission({ mode: 'queue', text, attachments: [] })
+        const result = await session.prompt([{ type: 'text', text }], 'queue', undefined, handle.requestId)
+        if (!result.ok) throw new Error(result.error.message)
       }}
       onOpenWorktree={async path => {
         const existing = Object.values(ctx.sessions.list.getSnapshot().byId).find(session => session.cwd === path && session.origin !== 'subagent')

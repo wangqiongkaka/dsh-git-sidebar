@@ -11,6 +11,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { IconRefreshOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionScope } from './api.ts'
 import { api } from './api.ts'
+import { diffTitle } from './navigation.ts'
 import type { SidebarDiffRef } from './state.ts'
 import { DiffView } from './DiffView.tsx'
 import { t } from './locales.ts'
@@ -41,6 +42,11 @@ export function DiffTab(props: { sessionId: string; cwd: string | undefined; dif
       try {
         if (diff.kind === 'commit') {
           const result = await api.gitCommitDiff(scope, diff.hashFull)
+          if (!cancelled) setData({ diff: result.diff })
+          return
+        }
+        if (diff.kind === 'range') {
+          const result = await api.gitRangeDiff(scope, diff.from, diff.to, diff.mergeBase)
           if (!cancelled) setData({ diff: result.diff })
           return
         }
@@ -80,8 +86,8 @@ export function DiffTab(props: { sessionId: string; cwd: string | undefined; dif
   return (
     <div className={css.gitDiffTab}>
       <div className={css.gitDiffTabHeader}>
-        <span className={css.gitDiffTabTitle} title={diff.kind === 'worktree' ? diff.path : `${diff.hash} ${diff.subject}`}>
-          {diff.kind === 'worktree' ? diff.path : `${diff.hash} ${diff.subject}`}
+        <span className={css.gitDiffTabTitle} title={diff.kind === 'worktree' ? diff.path : diffTitle(diff)}>
+          {diff.kind === 'worktree' ? diff.path : diffTitle(diff)}
         </span>
         <button
           type="button"

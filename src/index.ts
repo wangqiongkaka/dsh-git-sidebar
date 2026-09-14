@@ -249,6 +249,21 @@ export function buildApi(ctx: Context, readLimit: number): Record<string, (paylo
       await git.checkout(cwd, requireRevision(payload, 'branch'))
       return { ok: true }
     },
+    'git.branch-create': async (payload) => {
+      const { cwd } = cwdOf(payload)
+      await git.branchCreate(cwd, requireRevision(payload, 'name'), requireCommitHash(payload, 'commit'))
+      return { ok: true }
+    },
+    'git.branch-delete': async (payload) => {
+      const { cwd } = cwdOf(payload)
+      await git.branchDelete(cwd, requireRevision(payload, 'name'))
+      return { ok: true }
+    },
+    'git.range-diff': async (payload) => {
+      const { cwd } = cwdOf(payload)
+      const mergeBase = (payload as { mergeBase?: unknown }).mergeBase === true
+      return { diff: await git.rangeDiff(cwd, requireRevision(payload, 'from'), requireRevision(payload, 'to'), mergeBase) }
+    },
     'git.merge': async (payload) => {
       const { cwd } = cwdOf(payload)
       await git.merge(cwd, requireRevision(payload, 'branch'))

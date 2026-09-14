@@ -24,10 +24,16 @@ export function parseDiffAddress(address: string): { sessionId: string; diff: Si
       && typeof diff.hash === 'string' && typeof diff.subject === 'string') {
       return { sessionId, diff: { kind: 'commit', hash: diff.hash, hashFull: diff.hashFull, subject: diff.subject } }
     }
+    if (diff.kind === 'range' && typeof diff.from === 'string' && diff.from !== '' && typeof diff.to === 'string' && diff.to !== ''
+      && typeof diff.mergeBase === 'boolean' && typeof diff.title === 'string') {
+      return { sessionId, diff: { kind: 'range', from: diff.from, to: diff.to, mergeBase: diff.mergeBase, title: diff.title } }
+    }
     return undefined
   } catch { return undefined /* A malformed URI/JSON is not a Git diff address. */ }
 }
 
 export function diffTitle(diff: SidebarDiffRef): string {
-  return diff.kind === 'commit' ? `${diff.hash} ${diff.subject}` : diff.path.split(/[\\/]/).at(-1)!
+  if (diff.kind === 'commit') return `${diff.hash} ${diff.subject}`
+  if (diff.kind === 'range') return diff.title
+  return diff.path.split(/[\\/]/).at(-1)!
 }

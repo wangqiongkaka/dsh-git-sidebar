@@ -36,6 +36,7 @@ const logEntry: GitLogEntry = {
   author: 'Alice',
   date: '2024-01-01 10:00:00 +0800',
   refs: '',
+  parents: [],
 }
 
 const flush = async (): Promise<void> => {
@@ -51,6 +52,7 @@ function renderGitView(): { container: HTMLDivElement; root: Root } {
       scope: { sessionId: 'session-1', cwd: '/repo' },
       onOpenFile: () => {},
       onOpenDiff: () => {},
+      onPrompt: async () => {},
       onOpenWorktree: async () => {},
     }))
   })
@@ -60,7 +62,7 @@ function renderGitView(): { container: HTMLDivElement; root: Root } {
 /** List actions (stage all, stash, new tag, discard all) live in the "…" menu. */
 function openMoreMenu(): void {
   const anchor = [...document.querySelectorAll<HTMLButtonElement>('button')]
-    .find(button => button.getAttribute('aria-label') === 'Branch actions' || button.getAttribute('aria-label') === '分支操作')!
+    .find(button => button.getAttribute('aria-label') === 'More actions' || button.getAttribute('aria-label') === '更多操作')!
   act(() => { anchor.click() })
 }
 
@@ -354,7 +356,7 @@ describe('GitView tags', () => {
     try {
       await flush()
       openMoreMenu()
-      act(() => { labelledButton('New tag', '新建 Tag').click() })
+      act(() => { labelledButton('New tag…', '新建 Tag…').click() })
       const create = labelledButton('Create', '创建')
       expect(create.disabled).toBe(true)
 
@@ -380,7 +382,7 @@ describe('GitView tags', () => {
       await flush()
       const row = container.querySelector<HTMLElement>('[class*="gitLogRow"]')!
       act(() => { row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })) })
-      const entry = menuItem('Create tag here') ?? menuItem('在此提交创建 Tag')
+      const entry = menuItem('Create tag…') ?? menuItem('创建 Tag…')
       expect(entry).toBeDefined()
       act(() => { entry!.click() })
       expect(document.body.textContent).toContain('1a2b3c4')
@@ -408,7 +410,7 @@ describe('GitView tags', () => {
     try {
       await flush()
       openMoreMenu()
-      act(() => { labelledButton('New tag', '新建 Tag').click() })
+      act(() => { labelledButton('New tag…', '新建 Tag…').click() })
       typeInto(tagInput('v1.2.0'), 'bad name')
       await act(async () => { labelledButton('Create', '创建').click(); await Promise.resolve() })
       await flush()

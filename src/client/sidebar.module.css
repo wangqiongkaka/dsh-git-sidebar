@@ -38,16 +38,17 @@
   flex: none;
   display: flex;
   align-items: center;
-  gap: 8px;
-  height: 36px;
-  padding: 0 8px 0 12px;
+  gap: 6px;
+  height: 44px;
+  padding: 0 8px 0 10px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
 }
 
 .gitBranchSelect {
   flex: 1;
   min-width: 0;
-  height: 26px;
-  padding: 0 6px;
+  height: 28px;
+  padding: 0 8px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
   background: var(--dsw-alias-bg-base);
@@ -60,7 +61,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  height: 26px;
+  height: 28px;
   padding: 0 8px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
@@ -102,6 +103,7 @@
 
 .gitSectionHint {
   flex: none;
+  margin-left: auto;
   font: var(--dsw-font-xxxs-11);
   color: var(--dsw-alias-label-tertiary);
 }
@@ -157,6 +159,21 @@
   border-top: 1px solid var(--dsw-alias-border-l1);
 }
 
+/* Each list scrolls on its own so one long section cannot push the others away. */
+.gitSectionBody {
+  max-height: 160px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.gitSectionBodyChanges {
+  max-height: min(320px, 40vh);
+}
+
+.gitSectionBodyHistory {
+  max-height: min(360px, 45vh);
+}
+
 /* The changes list, and rows inside the secondary group, draw no divider. */
 .gitSectionFlat {
   border-top: none;
@@ -189,14 +206,15 @@
 
 .gitSectionCount {
   flex: none;
+  margin-right: auto;
   font: var(--dsw-font-xxs-12);
   font-weight: 400;
   color: var(--dsw-alias-label-tertiary);
 }
 
 .gitSectionToggle {
-  flex: 1;
-  min-width: 0;
+  flex: none;
+  max-width: 100%;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -297,6 +315,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font: var(--dsw-font-s-14);
+  font-size: 13px;
   color: var(--dsw-alias-label-primary);
 }
 
@@ -634,6 +653,7 @@
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-primary);
   font: var(--dsw-font-xxs-12);
+  font-size: 13px;
   line-height: 20px;
 }
 
@@ -673,12 +693,35 @@
 
 .gitLogRow {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   min-width: 0;
-  padding: 6px 12px;
+  height: 32px;
+  padding: 0 12px;
   cursor: pointer;
   border-radius: 8px;
+}
+
+.gitCompareBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 4px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  font: var(--dsw-font-xxxs-11);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.gitCompareBar > span {
+  flex: 1;
+}
+
+.gitGraph {
+  flex: none;
+  display: block;
+  overflow: visible;
 }
 
 .gitLogRow:hover {
@@ -708,11 +751,13 @@
 
 .gitLogRef {
   flex: none;
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   padding: 0 5px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 999px;
   font: var(--dsw-font-xxxs-strong-11);
-  color: var(--dsw-alias-brand-primary);
   white-space: nowrap;
 }
 
@@ -723,6 +768,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font: var(--dsw-font-s-14);
+  font-size: 13px;
   color: var(--dsw-alias-label-primary);
 }
 

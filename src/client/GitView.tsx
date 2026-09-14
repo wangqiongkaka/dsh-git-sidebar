@@ -9,13 +9,14 @@
  * revert, cherry-pick, copy paths/hashes). Refresh is manual + on mount/
  * focus (no file watcher — KISS).
  */
-import { useCallback, useEffect, useId, useState, type MouseEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useMemo, useState, type MouseEvent, type ReactNode } from 'react'
 import {
   Button, IconBranchOutline16, IconChevronRightOutline14, IconCodeOutline16, IconCopyOutline16, IconEllipsisOutline16, IconRefreshOutline16,
   IconTrashOutline16, Input, Menu, Modal, writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { GitLogEntry, GitOperation, GitStashEntry, GitStatusEntry, GitStatusResult, GitTagEntry, GitWorktree, SessionScope } from './api.ts'
 import { api } from './api.ts'
+import { layoutGraph, type GraphRow } from './graph.ts'
 import { relativeTo } from './paths.ts'
 import { relativeTime, t } from './locales.ts'
 import type { SidebarTab } from './state.ts'
@@ -56,6 +57,36 @@ function isUnstagedEntry(entry: GitStatusEntry): boolean {
 /** Whether the entry is untracked (`??`): git diff never includes it. */
 function isUntracked(entry: GitStatusEntry): boolean {
   return badgeOf(entry) === '?'
+}
+
+const GRAPH_LANE = 14
+const GRAPH_ROW = 32
+const GRAPH_COLORS = ['#2f6fdb', '#d0741c', '#2a9d5c', '#b84bd6', '#d63b5f', '#1f9fb5']
+
+/** The SVG rails of one history row (see {@link layoutGraph}). */
+function GraphCell(props: { row: GraphRow; lanes: number }) {
+  const { row, lanes } = props
+  const x = (lane: number): number => lane * GRAPH_LANE + GRAPH_LANE / 2
+  const color = (lane: number): string => GRAPH_COLORS[lane % GRAPH_COLORS.length]!
+  const mid = GRAPH_ROW / 2
+  const cx = x(row.lane)
+  return (
+    <svg className={css.gitGraph} width={lanes * GRAPH_LANE} height={GRAPH_ROW} aria-hidden="true">
+      {row.incoming && <line x1={cx} y1={0} x2={cx} y2={mid} stroke={color(row.lane)} strokeWidth={2} />}
+      {row.through.map(lane => (
+        <line key={`t${lane}`} x1={x(lane)} y1={0} x2={x(lane)} y2={GRAPH_ROW} stroke={color(lane)} strokeWidth={2} />
+      ))}
+      {row.joins.map(lane => (
+        <path key={`j${lane}`} d={`M${x(lane)} 0 C ${x(lane)} ${mid} ${cx} 0 ${cx} ${mid}`} fill="none" stroke={color(lane)} strokeWidth={2} />
+      ))}
+      {row.parents.map((lane, order) => (
+        lane === row.lane
+          ? <line key={`p${order}`} x1={cx} y1={mid} x2={cx} y2={GRAPH_ROW} stroke={color(lane)} strokeWidth={2} />
+          : <path key={`p${order}`} d={`M${cx} ${mid} C ${cx} ${GRAPH_ROW} ${x(lane)} ${mid} ${x(lane)} ${GRAPH_ROW}`} fill="none" stroke={color(lane)} strokeWidth={2} />
+      ))}
+      <circle cx={cx} cy={mid} r={4} fill={color(row.lane)} />
+    </svg>
+  )
 }
 
 /** The last path segment (tab title for a file's diff). */
@@ -107,8 +138,10 @@ export function GitView(props: {
   onOpenWorktree: (path: string) => Promise<void>
   /** Open a diff tab (the shell places it below the git pane on first use). */
   onOpenDiff: (tab: SidebarTab) => void
+  /** Queue a text prompt into the session's chat (history row "add to chat" / "explain"). */
+  onPrompt: (text: string) => Promise<void>
 }) {
-  const { scope, onOpenFile, onOpenDiff, onOpenWorktree } = props
+  const { scope, onOpenFile, onOpenDiff, onOpenWorktree, onPrompt } = props
   const viewId = useId()
   const [status, setStatus] = useState<GitStatusResult | null>(null)
   const [loading, setLoading] = useState(true)
@@ -137,6 +170,7 @@ export function GitView(props: {
   const [worktreeMerge, setWorktreeMerge] = useState<GitWorktree | null>(null)
   const [worktreeTarget, setWorktreeTarget] = useState('')
   const [operation, setOperation] = useState<GitOperation | null>(null)
+  const graph = useMemo(() => layoutGraph(logEntries), [logEntries])
   /** Whether the history was fully paged (a batch shorter than LOG_BATCH). */
   const [logEnded, setLogEnded] = useState(false)
   const [logLoadingMore, setLogLoadingMore] = useState(false)
@@ -155,6 +189,11 @@ export function GitView(props: {
   const [tagDraft, setTagDraft] = useState<{ commit: GitLogEntry | null; name: string; message: string } | null>(null)
   /** A failed create, shown inside the create dialog so the input survives a retry. */
   const [tagDraftError, setTagDraftError] = useState<string | null>(null)
+  /** The open create-branch draft (commit the branch starts from). */
+  const [branchDraft, setBranchDraft] = useState<{ commit: GitLogEntry; name: string } | null>(null)
+  const [branchDraftError, setBranchDraftError] = useState<string | null>(null)
+  /** "Compare with…": the first commit picked; the next history row click opens the range diff. */
+  const [compareFrom, setCompareFrom] = useState<GitLogEntry | null>(null)
   /** The open history-row context menu. */
   const [historyMenu, setHistoryMenu] = useState<{ entry: GitLogEntry; x: number; y: number } | null>(null)
   /** The pending destructive action awaiting confirmation. */
@@ -224,6 +263,49 @@ export function GitView(props: {
   }
 
   /** The diff tab for one commit (one tab per commit). */
+  /** Local branch names decorating a history row (remote refs and HEAD excluded). */
+  const localBranchesAt = (entry: GitLogEntry): string[] =>
+    refNames(entry.refs).filter(name => name !== 'HEAD' && !name.startsWith('tag: ') && branchNames.includes(name))
+
+  const openRangeDiff = (from: string, to: string, mergeBase: boolean, title: string): void => {
+    onOpenDiff({ id: `diff:r:${from}..${to}:${mergeBase ? 'mb' : 'raw'}`, type: 'diff', title, diff: { kind: 'range', from, to, mergeBase, title } })
+  }
+
+  const createBranch = async (): Promise<void> => {
+    const draft = branchDraft
+    if (draft === null || draft.name.trim() === '' || busy) return
+    setBusy(true)
+    setBranchDraftError(null)
+    try {
+      await api.gitBranchCreate(scope, draft.name.trim(), draft.commit.hashFull)
+      setBranchDraft(null)
+      await refresh()
+    } catch (reason) {
+      setBranchDraftError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const sendPrompt = async (text: string): Promise<void> => {
+    try {
+      await onPrompt(text)
+    } catch (reason) {
+      setCommitError(`${t('promptError')}: ${reason instanceof Error ? reason.message : String(reason)}`)
+    }
+  }
+
+  /** A history row click opens its diff, or finishes a pending "compare with…". */
+  const pickHistoryRow = (entry: GitLogEntry): void => {
+    if (compareFrom === null) {
+      openCommitDiff(entry)
+      return
+    }
+    const from = compareFrom
+    setCompareFrom(null)
+    if (from.hashFull !== entry.hashFull) openRangeDiff(from.hashFull, entry.hashFull, false, `${from.hash} ↔ ${entry.hash}`)
+  }
+
   const openCommitDiff = (entry: GitLogEntry): void => {
     onOpenDiff({
       id: `diff:c:${entry.hashFull}`,
@@ -588,20 +670,22 @@ export function GitView(props: {
           open={branchMenuOpen}
           onClose={() => { setBranchMenuOpen(false) }}
           items={[
-            { id: 'fetch-all', label: t('fetchAll'), icon: <IconRefreshOutline16 size={14} /> },
-            { id: 'push', label: t('pushBranch'), icon: <IconBranchOutline16 size={14} />, disabled: status?.branch === 'HEAD' },
+            { type: 'label', id: 'label-remote', text: t('groupRemote') },
+            { id: 'fetch-all', label: t('fetchAll') },
+            { id: 'push', label: t('pushBranch'), disabled: status?.branch === 'HEAD' },
             { type: 'separator', id: 'remote-separator' },
-            { id: 'merge', label: t('mergeBranch'), icon: <IconBranchOutline16 size={14} />, disabled: branchNames.every(name => name === status?.branch) },
-            { id: 'rebase', label: t('rebaseBranch'), icon: <IconRefreshOutline16 size={14} />, disabled: branchNames.every(name => name === status?.branch) },
+            { type: 'label', id: 'label-branch', text: t('groupBranch') },
+            { id: 'merge', label: t('mergeBranchMenu'), disabled: branchNames.every(name => name === status?.branch) },
+            { id: 'rebase', label: t('rebaseBranchMenu'), disabled: branchNames.every(name => name === status?.branch) },
+            { id: 'worktree', label: t('worktreesMenu') },
             { type: 'separator', id: 'branch-separator' },
-            { id: 'worktree', label: t('worktrees'), icon: <IconBranchOutline16 size={14} /> },
-            { type: 'separator', id: 'changes-separator' },
+            { type: 'label', id: 'label-worktree', text: t('groupWorkingTree') },
             { id: 'stage-all', label: allStaged ? t('unstageAll') : t('stageAll'), disabled: entries.length === 0 },
             { id: 'stash-save', label: t('stashSave'), disabled: entries.length === 0 },
-            { id: 'tag-new', label: t('tagNew') },
-            { id: 'discard-all', label: t('discardAll'), icon: <IconTrashOutline16 size={14} />, danger: true, disabled: discardableCount === 0 },
+            { id: 'tag-new', label: t('tagNewMenu') },
+            { id: 'discard-all', label: t('discardAll'), danger: true, disabled: discardableCount === 0 },
             { type: 'separator', id: 'refresh-separator' },
-            { id: 'refresh', label: t('refresh'), icon: <IconRefreshOutline16 size={14} /> },
+            { id: 'refresh', label: t('refresh') },
           ]}
           onSelect={(id) => {
             const branch = branchNames.find(name => name !== status?.branch) ?? null
@@ -674,7 +758,7 @@ export function GitView(props: {
               {entries.length > 0 && <span className={css.gitSectionHint}>{t('tickToStage')}</span>}
             </div>
             {expandedSections.changes && (
-              <div id={`git-changes-${viewId}`}>
+              <div id={`git-changes-${viewId}`} className={`${css.gitSectionBody} ${css.gitSectionBodyChanges}`}>
                 {entries.length === 0 && (
                   <div className={css.gitClean}>
                     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="9" /><path d="M8 12l3 3 5-6" /></svg>
@@ -697,7 +781,7 @@ export function GitView(props: {
             </div>
             {stashError !== null && <div className={css.gitError}>{stashError}</div>}
             {expandedSections.stash && (
-              <div id={`git-stash-entries-${viewId}`}>
+              <div id={`git-stash-entries-${viewId}`} className={css.gitSectionBody}>
                 {stashEntries.length === 0 && <div className={css.gitEmpty}>{t('noChanges')}</div>}
                 {stashEntries.map(entry => (
                   <div key={entry.ref} className={css.gitRow}>
@@ -727,7 +811,7 @@ export function GitView(props: {
             </div>
             {tagError !== null && <div className={css.gitError}>{tagError}</div>}
             {expandedSections.tag && (
-              <div id={`git-tag-entries-${viewId}`}>
+              <div id={`git-tag-entries-${viewId}`} className={css.gitSectionBody}>
                 {tagEntries.length === 0 && <div className={css.gitEmpty}>{t('noChanges')}</div>}
                 {tagEntries.map(entry => (
                   <div key={entry.name} className={css.gitRow}>
@@ -755,28 +839,40 @@ export function GitView(props: {
               </button>
               {logEntries.length > 0 && <span className={css.gitSectionHint}>{t('historyRecent', { count: logEntries.length })}</span>}
             </div>
-            {expandedSections.history && logEntries.map(entry => (
+            {compareFrom !== null && (
+              <div className={css.gitCompareBar}>
+                <span>{t('comparePick', { hash: compareFrom.hash })}</span>
+                <button type="button" className={css.gitLink} onClick={() => { setCompareFrom(null) }}>{t('cancel')}</button>
+              </div>
+            )}
+            {expandedSections.history && (
+            <div id={`git-history-${viewId}`} className={`${css.gitSectionBody} ${css.gitSectionBodyHistory}`}>
+            {logEntries.map((entry, index) => (
               <div
                 key={entry.hashFull}
                 role="button"
                 tabIndex={0}
                 className={css.gitLogRow}
                 title={`${refNames(entry.refs).join(' ')}\n${entry.author} · ${entry.date}\n${entry.hashFull}`.trimStart()}
-                onClick={() => { openCommitDiff(entry) }}
+                onClick={() => { pickHistoryRow(entry) }}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault()
-                    openCommitDiff(entry)
+                    pickHistoryRow(entry)
                   }
                 }}
                 onContextMenu={(event) => { openHistoryMenu(event, entry) }}
               >
+                <GraphCell row={graph.rows[index]!} lanes={graph.lanes} />
                 <span className={css.gitLogHash}>{entry.hash}</span>
                 <span className={css.gitLogSubject}>{entry.subject}</span>
+                {refNames(entry.refs).map(ref => (
+                  <span key={ref} className={css.gitLogRef} style={{ color: GRAPH_COLORS[graph.rows[index]!.lane % GRAPH_COLORS.length] }}>{ref}</span>
+                ))}
                 <span className={css.gitLogMeta}>{relativeTime(entry.date)}</span>
               </div>
             ))}
-            {expandedSections.history && !logEnded && (
+            {!logEnded && (
               <button
                 type="button"
                 className={css.gitLogMore}
@@ -785,6 +881,8 @@ export function GitView(props: {
               >
                 {logLoadingMore ? t('loading') : t('loadMore')}
               </button>
+            )}
+            </div>
             )}
           </div>
 
@@ -951,61 +1049,85 @@ export function GitView(props: {
           <Menu
             open={historyMenu !== null}
             onClose={() => { setHistoryMenu(null) }}
-            items={[
-              { id: 'view', label: t('viewCommitDiff') },
-              { id: 'copyShort', label: t('copyShortHash'), icon: <IconCopyOutline16 size={14} /> },
-              { id: 'copyFull', label: t('copyFullHash'), icon: <IconCopyOutline16 size={14} /> },
-              { id: 'copySubject', label: t('copySubject'), icon: <IconCopyOutline16 size={14} /> },
-              { id: 'tag', label: t('tagCreateHere') },
-              { type: 'separator', id: 'sep2' },
-              { id: 'revert', label: t('revertCommit'), danger: true },
-              { id: 'cherryPick', label: t('cherryPickCommit'), danger: true },
-            ]}
+            items={(() => {
+              const entry = historyMenu?.entry
+              const locals = entry === undefined ? [] : localBranchesAt(entry)
+              const switchable = locals.filter(name => name !== status?.branch)
+              const deletable = switchable
+              return [
+                { id: 'view', label: t('viewCommitDiff') },
+                { type: 'separator', id: 'sep-open' },
+                { id: 'checkout', label: t('checkoutBranch'), disabled: switchable.length === 0, submenu: switchable.map(name => ({ id: `checkout:${name}`, label: name })) },
+                { id: 'checkoutDetached', label: t('checkoutDetached') },
+                { type: 'separator', id: 'sep-branch' },
+                { id: 'branchCreate', label: t('branchCreate') },
+                { id: 'branchDelete', label: t('branchDelete'), disabled: deletable.length === 0, submenu: deletable.map(name => ({ id: `delete:${name}`, label: name })) },
+                { type: 'separator', id: 'sep-tag' },
+                { id: 'tag', label: t('tagCreateHere') },
+                { type: 'separator', id: 'sep-pick' },
+                { id: 'cherryPick', label: t('cherryPickCommit') },
+                { id: 'revert', label: t('revertCommit'), danger: true },
+                { type: 'separator', id: 'sep-compare' },
+                { id: 'compareRemote', label: t('compareRemote'), disabled: (status?.branch ?? 'HEAD') === 'HEAD' },
+                { id: 'compareMergeBase', label: t('compareMergeBase') },
+                { id: 'compareWith', label: t('compareWith') },
+                { type: 'separator', id: 'sep-copy' },
+                { id: 'copyFull', label: t('copyFullHash') },
+                { id: 'copySubject', label: t('copySubject') },
+                { type: 'separator', id: 'sep-chat' },
+                { id: 'addToChat', label: t('addToChat') },
+                { id: 'explain', label: t('explainCommit') },
+              ]
+            })()}
             onSelect={(id) => {
               const target = historyMenu
               if (target === null) return
               setHistoryMenu(null)
-              if (id === 'view') {
-                openCommitDiff(target.entry)
-                return
+              const entry = target.entry
+              if (id === 'view') openCommitDiff(entry)
+              if (id.startsWith('checkout:')) void checkout(id.slice('checkout:'.length))
+              if (id === 'checkoutDetached') void checkout(entry.hashFull)
+              if (id === 'branchCreate') { setBranchDraftError(null); setBranchDraft({ commit: entry, name: '' }) }
+              if (id.startsWith('delete:')) {
+                const name = id.slice('delete:'.length)
+                runConfirmed({
+                  title: t('branchDeleteTitle'),
+                  description: t('branchDeleteDesc', { name }),
+                  confirmLabel: t('branchDelete'),
+                  onConfirm: () => api.gitBranchDelete(scope, name),
+                })
               }
-              if (id === 'copyShort') {
-                copy(target.entry.hash)
-                return
-              }
-              if (id === 'copyFull') {
-                copy(target.entry.hashFull)
-                return
-              }
-              if (id === 'copySubject') {
-                copy(target.entry.subject)
-                return
-              }
-              if (id === 'tag') {
-                setTagDraftError(null)
-                setTagDraft({ commit: target.entry, name: '', message: '' })
-                return
+              if (id === 'tag') { setTagDraftError(null); setTagDraft({ commit: entry, name: '', message: '' }) }
+              if (id === 'cherryPick') {
+                runConfirmed({
+                  title: t('cherryPickTitle'),
+                  description: t('cherryPickDesc', { subject: entry.subject }),
+                  confirmLabel: t('cherryPickCommit'),
+                  onConfirm: () => api.gitCherryPick(scope, entry.hashFull),
+                })
               }
               if (id === 'revert') {
                 runConfirmed({
                   title: t('revertTitle'),
-                  description: t('revertDesc', { subject: target.entry.subject }),
+                  description: t('revertDesc', { subject: entry.subject }),
                   confirmLabel: t('revertCommit'),
-                  onConfirm: () => api.gitRevert(scope, target.entry.hashFull),
-                })
-                return
-              }
-              if (id === 'cherryPick') {
-                runConfirmed({
-                  title: t('cherryPickTitle'),
-                  description: t('cherryPickDesc', { subject: target.entry.subject }),
-                  confirmLabel: t('cherryPickCommit'),
-                  onConfirm: () => api.gitCherryPick(scope, target.entry.hashFull),
+                  onConfirm: () => api.gitRevert(scope, entry.hashFull),
                 })
               }
+              if (id === 'compareRemote') {
+                const remote = `origin/${status?.branch ?? ''}`
+                openRangeDiff(remote, entry.hashFull, false, `${remote} ↔ ${entry.hash}`)
+              }
+              if (id === 'compareMergeBase') openRangeDiff('HEAD', entry.hashFull, true, t('compareMergeBaseTitle', { hash: entry.hash }))
+              if (id === 'compareWith') setCompareFrom(entry)
+              if (id === 'copyFull') copy(entry.hashFull)
+              if (id === 'copySubject') copy(entry.subject)
+              if (id === 'addToChat') void sendPrompt(t('addToChatText', { hash: entry.hashFull, subject: entry.subject }))
+              if (id === 'explain') void sendPrompt(t('explainCommitText', { hash: entry.hashFull, subject: entry.subject }))
             }}
             portal
             align="start"
+            compact
             getAnchorRect={() => (historyMenu === null ? null : new DOMRect(historyMenu.x, historyMenu.y, 0, 0))}
             anchor={<span />}
           />
@@ -1038,6 +1160,32 @@ export function GitView(props: {
           </Modal>
         </>
       )}
+
+      <Modal
+        open={branchDraft !== null}
+        onClose={() => { setBranchDraft(null) }}
+        title={t('branchCreateTitle')}
+        closeLabel={t('cancel')}
+        footer={(
+          <>
+            <Button variant="outline" onClick={() => { setBranchDraft(null) }}>{t('cancel')}</Button>
+            <Button variant="primary" disabled={busy || (branchDraft?.name.trim() ?? '') === ''} onClick={() => { void createBranch() }}>
+              {t('branchCreateConfirm')}
+            </Button>
+          </>
+        )}
+      >
+        <p className={css.gitConfirmDesc}>
+          {branchDraft !== null && t('branchAtCommit', { hash: branchDraft.commit.hash, subject: branchDraft.commit.subject })}
+        </p>
+        <Input
+          placeholder={t('branchNamePlaceholder')}
+          value={branchDraft?.name ?? ''}
+          disabled={busy}
+          onChange={(event) => { setBranchDraft(draft => draft === null ? draft : { ...draft, name: event.target.value }); setBranchDraftError(null) }}
+        />
+        {branchDraftError !== null && <div className={css.gitError}>{branchDraftError}</div>}
+      </Modal>
 
       <Modal
         open={tagDraft !== null}

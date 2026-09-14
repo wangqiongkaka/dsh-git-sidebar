@@ -51,6 +51,8 @@ export interface GitLogEntry {
   date: string
   /** Ref decorations (--decorate=short), e.g. `HEAD -> main, origin/main`; '' when none. */
   refs: string
+  /** Full parent hashes, first parent first; [] for a root commit. */
+  parents: string[]
 }
 
 export interface GitWorktree {
@@ -149,6 +151,15 @@ export const api = {
     call<{ current: string; names: string[] }>('git.branch', scopePayload(scope, {}), signal),
   gitCheckout: (scope: SessionScope, branch: string) =>
     call<{ ok: true }>('git.checkout', scopePayload(scope, { branch })),
+  /** Create a branch at a commit (no switch). */
+  gitBranchCreate: (scope: SessionScope, name: string, commit: string) =>
+    call<{ ok: true }>('git.branch-create', scopePayload(scope, { name, commit })),
+  /** Delete a merged local branch. */
+  gitBranchDelete: (scope: SessionScope, name: string) =>
+    call<{ ok: true }>('git.branch-delete', scopePayload(scope, { name })),
+  /** Patch between two revisions (left side = merge-base when `mergeBase`). */
+  gitRangeDiff: (scope: SessionScope, from: string, to: string, mergeBase: boolean, signal?: AbortSignal) =>
+    call<{ diff: string }>('git.range-diff', scopePayload(scope, { from, to, mergeBase }), signal),
   gitMerge: (scope: SessionScope, branch: string) =>
     call<{ ok: true }>('git.merge', scopePayload(scope, { branch })),
   gitRebase: (scope: SessionScope, branch: string) =>

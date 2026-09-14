@@ -42,6 +42,8 @@ export interface GitLogEntry {
   date: string
   /** Ref decorations (`%D` with --decorate=short), e.g. `HEAD -> main, origin/main`; '' when none. */
   refs: string
+  /** Full parent hashes (`%P`), first parent first; [] for a root commit. */
+  parents: string[]
 }
 
 /** One linked checkout from `git worktree list --porcelain -z`. */
@@ -101,12 +103,12 @@ export function parsePorcelainZ(output: string): GitStatusEntry[] {
   return entries
 }
 
-/** Parse `git log --pretty=format:%h%x1f%s%x1f%an%x1f%ai%x1f%H%x1f%D` rows. */
+/** Parse `git log --pretty=format:%h%x1f%s%x1f%an%x1f%ai%x1f%H%x1f%D%x1f%P` rows. */
 export function parseLogLines(output: string): GitLogEntry[] {
   const rows: GitLogEntry[] = []
   for (const line of output.split('\n')) {
     if (line === '') continue
-    const [hash, subject, author, date, hashFull, refs] = line.split('\x1f')
+    const [hash, subject, author, date, hashFull, refs, parents] = line.split('\x1f')
     if (hash === undefined || subject === undefined) continue
     rows.push({
       hash,
@@ -115,6 +117,7 @@ export function parseLogLines(output: string): GitLogEntry[] {
       date: date ?? '',
       hashFull: hashFull ?? hash,
       refs: refs ?? '',
+      parents: (parents ?? '').split(' ').filter(part => part !== ''),
     })
   }
   return rows
@@ -288,6 +291,25 @@ export async function checkout(cwd: string, branch: string): Promise<void> {
   await runGit(cwd, ['checkout', branch])
 }
 
+/** Create a branch at a commit without switching to it. */
+export async function branchCreate(cwd: string, name: string, commit: string): Promise<void> {
+  await runGit(cwd, ['branch', name, commit])
+}
+
+/** Delete a fully merged local branch (`-d`; git refuses an unmerged one). */
+export async function branchDelete(cwd: string, name: string): Promise<void> {
+  await runGit(cwd, ['branch', '-d', name])
+}
+
+/**
+ * Patch between two revisions; with `mergeBase` the left side becomes
+ * `merge-base(from, to)` (what `to` adds since the branches diverged).
+ */
+export async function rangeDiff(cwd: string, from: string, to: string, mergeBase = false): Promise<string> {
+  const left = mergeBase ? (await runGit(cwd, ['merge-base', from, to])).trim() : from
+  return runGit(cwd, ['diff', '--no-ext-diff', '--no-color', left, to])
+}
+
 /** Merge an existing branch into the current branch without opening an editor. */
 export async function merge(cwd: string, branch: string): Promise<void> {
   await runGit(cwd, ['merge', '--no-edit', branch])
@@ -358,11 +380,14 @@ export async function abortOperation(cwd: string, kind: GitOperation): Promise<v
   await runGit(cwd, [kind, '--abort'])
 }
 
-/** Recent commit history (newest first), lazily pageable via skip/count. */
+/**
+ * Recent commit history across every branch (newest first, date order so the
+ * client graph stays consistent while paging), lazily pageable via skip/count.
+ */
 export async function log(cwd: string, count = 30, skip = 0): Promise<GitLogEntry[]> {
   const raw = await runGit(cwd, [
-    'log', '-n', String(count), '--skip', String(skip), '--decorate=short',
-    '--pretty=format:%h%x1f%s%x1f%an%x1f%ai%x1f%H%x1f%D',
+    'log', '--all', '--date-order', '-n', String(count), '--skip', String(skip), '--decorate=short',
+    '--pretty=format:%h%x1f%s%x1f%an%x1f%ai%x1f%H%x1f%D%x1f%P',
   ])
   return parseLogLines(raw)
 }
