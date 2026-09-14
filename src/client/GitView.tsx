@@ -7,9 +7,9 @@
  * placed below the git pane on first use. File rows and history rows open a
  * right-click context menu with advanced operations (open in editor, discard,
  * revert, cherry-pick, copy paths/hashes). Refresh is manual + on mount/
- * focus (no file watcher — KISS).
+ * focus, plus a 5 s poll while the tab is visible (no file watcher — KISS).
  */
-import { useCallback, useEffect, useId, useMemo, useState, type MouseEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import {
   Button, IconBranchOutline16, IconChevronRightOutline14, IconCodeOutline16, IconCopyOutline16, IconEllipsisOutline16, IconRefreshOutline16,
   IconTrashOutline16, Input, Menu, Modal, writeClipboard,
@@ -118,6 +118,8 @@ interface ConfirmState {
 /** History batch size: the log loads lazily in pages so a long history never
  *  floods the panel at once (the end of the log is reached by paging). */
 const LOG_BATCH = 20
+/** Background status poll interval while the panel is visible. */
+const AUTO_REFRESH_MS = 5000
 
 /** Start a worktree draft on a new branch based on the current branch. */
 export function defaultWorktreeDraft(currentBranch: string, pathPrefix: string) {
@@ -201,8 +203,9 @@ export function GitView(props: {
   /** Change-group folding is intentionally local to this mounted Git view. */
   const [expandedSections, setExpandedSections] = useState({ changes: true, stash: false, tag: false, history: true })
 
-  const refresh = useCallback(async (): Promise<void> => {
-    setLoading(true)
+  /** Reload everything; `silent` skips the loading placeholder (background polls). */
+  const refresh = useCallback(async (silent = false): Promise<void> => {
+    if (!silent) setLoading(true)
     setError(null)
     try {
       const [statusResult, branchResult, logResult, worktreeResult, operationResult, stashResult, tagResult] = await Promise.all([
@@ -236,6 +239,25 @@ export function GitView(props: {
   }, [scope.sessionId, scope.cwd])
 
   useEffect(() => { void refresh() }, [refresh])
+
+  // Keep the panel current without a file watcher: poll while the tab is
+  // visible, and re-read when the window regains focus. Skipped mid-operation
+  // so a poll cannot race a running git command's own refresh.
+  const busyRef = useRef(busy)
+  busyRef.current = busy
+  useEffect(() => {
+    const tick = (): void => {
+      if (document.visibilityState === 'visible' && !busyRef.current) void refresh(true)
+    }
+    const timer = setInterval(tick, AUTO_REFRESH_MS)
+    window.addEventListener('focus', tick)
+    document.addEventListener('visibilitychange', tick)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener('focus', tick)
+      document.removeEventListener('visibilitychange', tick)
+    }
+  }, [refresh])
 
   /** Append the next history page (lazy: only when the user asks for more). */
   const loadMoreLog = async (): Promise<void> => {
