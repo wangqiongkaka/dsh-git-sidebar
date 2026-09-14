@@ -218,6 +218,8 @@ export function GitView(props: {
   /** The open create-branch draft (commit the branch starts from). */
   const [branchDraft, setBranchDraft] = useState<{ commit: GitLogEntry; name: string } | null>(null)
   const [branchDraftError, setBranchDraftError] = useState<string | null>(null)
+  /** Whether the history box is scrolled far enough for a "back to top" affordance. */
+  const [historyScrolled, setHistoryScrolled] = useState(false)
   /** "Compare with…": the first commit picked; the next history row click opens the range diff. */
   const [compareFrom, setCompareFrom] = useState<GitLogEntry | null>(null)
   /** The open history-row context menu. */
@@ -323,6 +325,20 @@ export function GitView(props: {
       setCommitError(`${t('historyLoadError')}: ${reason instanceof Error ? reason.message : String(reason)}`)
     } finally {
       setLogLoadingMore(false)
+    }
+  }
+
+  /** Scroll the history back to the top and drop the paged-in tail (back to page one). */
+  const backToTop = (): void => {
+    const box = rootRef.current?.querySelector<HTMLElement>('[data-scroll-key="history"]')
+    if (box !== null && box !== undefined) box.scrollTop = 0
+    memory.scroll.history = 0
+    setHistoryScrolled(false)
+    if (logEntries.length > LOG_BATCH) {
+      setLogEntries(entries => entries.slice(0, LOG_BATCH))
+      setLogEnded(false)
+      logCountRef.current = LOG_BATCH
+      memory.logCount = LOG_BATCH
     }
   }
 
@@ -911,7 +927,10 @@ export function GitView(props: {
                 <IconChevronRightOutline14 className={expandedSections.history ? css.gitSectionChevronExpanded : css.gitSectionChevron} />
                 <span>{t('history')}</span>
               </button>
-              {logEntries.length > 0 && <span className={css.gitSectionHint}>{t('historyRecent', { count: logEntries.length })}</span>}
+              {historyScrolled && (
+                <button type="button" className={`${css.gitLink} ${css.gitBackToTop}`} onClick={backToTop}>{t('backToTop')}</button>
+              )}
+              {logEntries.length > 0 && <span className={`${css.gitSectionHint} ${historyScrolled ? css.gitSectionHintAfterLink : ''}`}>{t('historyRecent', { count: logEntries.length })}</span>}
             </div>
             {compareFrom !== null && (
               <div className={css.gitCompareBar}>
@@ -927,6 +946,7 @@ export function GitView(props: {
               onScroll={(event) => {
                 const box = event.currentTarget
                 memory.scroll.history = box.scrollTop
+                setHistoryScrolled(box.scrollTop > box.clientHeight)
                 // Infinite scroll: page in the next batch when the bottom is near.
                 if (box.scrollTop + box.clientHeight >= box.scrollHeight - LOAD_MORE_THRESHOLD) void loadMoreLog()
               }}

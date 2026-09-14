@@ -702,6 +702,14 @@
   border-radius: 8px;
 }
 
+.gitBackToTop {
+  margin-left: auto;
+}
+
+.gitSectionHintAfterLink {
+  margin-left: 0;
+}
+
 .gitCompareBar {
   display: flex;
   align-items: center;
