@@ -140,6 +140,8 @@ function memoryFor(sessionId: string): ViewMemory {
   }
   return memory
 }
+/** Distance from the history list's bottom (px) at which the next page is fetched. */
+const LOAD_MORE_THRESHOLD = 48
 /** Background status poll interval while the panel is visible. */
 const AUTO_REFRESH_MS = 5000
 
@@ -918,7 +920,17 @@ export function GitView(props: {
               </div>
             )}
             {expandedSections.history && (
-            <div id={`git-history-${viewId}`} className={`${css.gitSectionBody} ${css.gitSectionBodyHistory}`} {...scrollProps('history')}>
+            <div
+              id={`git-history-${viewId}`}
+              className={`${css.gitSectionBody} ${css.gitSectionBodyHistory}`}
+              data-scroll-key="history"
+              onScroll={(event) => {
+                const box = event.currentTarget
+                memory.scroll.history = box.scrollTop
+                // Infinite scroll: page in the next batch when the bottom is near.
+                if (box.scrollTop + box.clientHeight >= box.scrollHeight - LOAD_MORE_THRESHOLD) void loadMoreLog()
+              }}
+            >
             {logEntries.map((entry, index) => (
               <div
                 key={entry.hashFull}
