@@ -545,8 +545,13 @@
   white-space: nowrap;
 }
 
+.gitBranchFlow > select {
+  width: 100%;
+  text-align: center;
+}
+
 .gitRebaseWarning {
-  margin: 0 0 12px;
+  margin: 0;
   color: var(--dsw-alias-state-warn-label);
   font: var(--dsw-font-xxs-12);
 }

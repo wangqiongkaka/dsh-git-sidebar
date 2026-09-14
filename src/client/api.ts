@@ -20,6 +20,7 @@ export interface GitStatusResult {
   isRepo: boolean
   branch?: string
   ahead: number
+  behind: number
   entries: GitStatusEntry[]
 }
 

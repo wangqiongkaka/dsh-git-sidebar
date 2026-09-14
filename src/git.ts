@@ -27,6 +27,7 @@ export interface GitStatusResult {
   isRepo: boolean
   branch?: string
   ahead: number
+  behind: number
   entries: GitStatusEntry[]
 }
 
@@ -201,13 +202,19 @@ export async function currentBranch(cwd: string): Promise<string> {
 /** Working-tree status (untracked included). */
 export async function status(cwd: string): Promise<GitStatusResult> {
   const repo = await isGitRepo(cwd)
-  if (!repo) return { isRepo: false, ahead: 0, entries: [] }
-  const [branch, raw, ahead] = await Promise.all([
+  if (!repo) return { isRepo: false, ahead: 0, behind: 0, entries: [] }
+  const [branch, raw, [behind, ahead]] = await Promise.all([
     currentBranch(cwd).catch(() => 'HEAD'),
     runGit(cwd, ['status', '--porcelain=v1', '-z', '--untracked-files=normal']),
-    runGit(cwd, ['rev-list', '--count', '@{upstream}..HEAD']).then(value => Number(value.trim())).catch(() => 0),
+    // "<behind>\t<ahead>"; no upstream → both 0.
+    runGit(cwd, ['rev-list', '--left-right', '--count', '@{upstream}...HEAD'])
+      .then((value): [number, number] => {
+        const [left = 0, right = 0] = value.trim().split(/\s+/).map(Number)
+        return [left, right]
+      })
+      .catch((): [number, number] => [0, 0]),
   ])
-  return { isRepo: true, branch, ahead, entries: parsePorcelainZ(raw) }
+  return { isRepo: true, branch, ahead, behind, entries: parsePorcelainZ(raw) }
 }
 
 /** Fetch the current remote, or every configured remote. */

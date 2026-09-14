@@ -12,6 +12,7 @@ const dirtyStatus: GitStatusResult = {
   isRepo: true,
   branch: 'main',
   ahead: 0,
+  behind: 0,
   entries: [
     { path: 'staged.ts', xy: 'M ' },
     { path: 'unstaged.ts', xy: ' M' },
@@ -221,7 +222,7 @@ describe('GitView stash', () => {
   // WHY: stashing is only meaningful when there is something to stash; an
   // enabled button on a clean tree just produces a git error.
   it('disables the stash button when the three change groups are empty', async () => {
-    vi.mocked(api.gitStatus).mockResolvedValue({ isRepo: true, branch: 'main', ahead: 0, entries: [] })
+    vi.mocked(api.gitStatus).mockResolvedValue({ isRepo: true, branch: 'main', ahead: 0, behind: 0, entries: [] })
     const { container, root } = renderGitView()
     try {
       await flush()

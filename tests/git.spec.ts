@@ -209,6 +209,51 @@ describe('discard all changes', () => {
   })
 })
 
+describe('ahead / behind', () => {
+  const gitRun = (cwd: string, args: string[]): string => {
+    const result = spawnSync('git', ['-C', cwd, ...args], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: 'dsh-better-sidebar-test',
+        GIT_AUTHOR_EMAIL: 'test@dsh.invalid',
+        GIT_COMMITTER_NAME: 'dsh-better-sidebar-test',
+        GIT_COMMITTER_EMAIL: 'test@dsh.invalid',
+      },
+    })
+    if (result.status !== 0) throw new Error(result.stderr || `git ${args[0] ?? ''} failed`)
+    return result.stdout
+  }
+
+  it('counts commits on both sides of the upstream', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-sidebar-ahead-behind-'))
+    const remote = join(root, 'remote')
+    const local = join(root, 'local')
+    try {
+      mkdirSync(remote)
+      gitRun(remote, ['init', '-q', '-b', 'main'])
+      writeFileSync(join(remote, 'a.txt'), 'base\n')
+      gitRun(remote, ['add', '-A'])
+      gitRun(remote, ['commit', '-q', '-m', 'base'])
+      gitRun(root, ['clone', '-q', remote, local])
+      expect(await status(local)).toMatchObject({ ahead: 0, behind: 0 })
+
+      writeFileSync(join(remote, 'a.txt'), 'remote 1\n')
+      gitRun(remote, ['commit', '-q', '-am', 'remote 1'])
+      writeFileSync(join(remote, 'a.txt'), 'remote 2\n')
+      gitRun(remote, ['commit', '-q', '-am', 'remote 2'])
+      writeFileSync(join(local, 'b.txt'), 'local\n')
+      gitRun(local, ['add', '-A'])
+      gitRun(local, ['commit', '-q', '-m', 'local'])
+      gitRun(local, ['fetch', '-q'])
+
+      expect(await status(local)).toMatchObject({ ahead: 1, behind: 2 })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('stash stack', () => {
   const gitRun = (cwd: string, args: string[]): string => {
     const result = spawnSync('git', ['-C', cwd, ...args], {

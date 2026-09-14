@@ -754,6 +754,7 @@ export function GitView(props: {
         >
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M5 13V3M2 6l3-3 3 3M11 3v10M8 10l3 3 3-3" /></svg>
           <span>{t('sync')}</span>
+          {(status?.behind ?? 0) > 0 && <span className={css.gitSyncBadge}>↓{status!.behind}</span>}
           {(status?.ahead ?? 0) > 0 && <span className={css.gitSyncBadge}>↑{status!.ahead}</span>}
         </button>
         <Menu
@@ -1354,17 +1355,17 @@ export function GitView(props: {
       >
         <p className={css.gitConfirmDesc}>{t('mergeDesc', { source: mergeSource ?? '', current: status?.branch ?? '' })}</p>
         <div className={css.gitBranchFlow}>
-          <span title={mergeSource ?? ''}>{mergeSource}</span>
+          <select
+            className={css.gitBranchSelect}
+            aria-label={t('mergeTitle')}
+            value={mergeSource ?? ''}
+            onChange={(event) => { setMergeSource(event.target.value) }}
+          >
+            {branchNames.filter(name => name !== status?.branch).map(name => <option key={name} value={name}>{name}</option>)}
+          </select>
           <span aria-hidden="true">→</span>
           <span title={status?.branch ?? ''}>{status?.branch}</span>
         </div>
-        <select
-          className={css.gitBranchSelect}
-          value={mergeSource ?? ''}
-          onChange={(event) => { setMergeSource(event.target.value) }}
-        >
-          {branchNames.filter(name => name !== status?.branch).map(name => <option key={name} value={name}>{name}</option>)}
-        </select>
       </Modal>
 
       <Modal
@@ -1394,16 +1395,16 @@ export function GitView(props: {
         <div className={css.gitBranchFlow}>
           <span title={status?.branch ?? ''}>{status?.branch}</span>
           <span aria-hidden="true">→</span>
-          <span title={rebaseTarget ?? ''}>{rebaseTarget}</span>
+          <select
+            className={css.gitBranchSelect}
+            aria-label={t('rebaseTitle')}
+            value={rebaseTarget ?? ''}
+            onChange={(event) => { setRebaseTarget(event.target.value) }}
+          >
+            {branchNames.filter(name => name !== status?.branch).map(name => <option key={name} value={name}>{name}</option>)}
+          </select>
         </div>
         <p className={css.gitRebaseWarning}>{t('rebaseWarning')}</p>
-        <select
-          className={css.gitBranchSelect}
-          value={rebaseTarget ?? ''}
-          onChange={(event) => { setRebaseTarget(event.target.value) }}
-        >
-          {branchNames.filter(name => name !== status?.branch).map(name => <option key={name} value={name}>{name}</option>)}
-        </select>
       </Modal>
 
       <Modal
