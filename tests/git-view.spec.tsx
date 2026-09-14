@@ -4,7 +4,7 @@ import { createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
 import { api, type GitLogEntry, type GitStashEntry, type GitStatusResult, type GitTagEntry } from '../src/client/api.ts'
-import { GitView } from '../src/client/GitView.tsx'
+import { GitView, resetViewMemory } from '../src/client/GitView.tsx'
 
 ;(globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -96,6 +96,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  resetViewMemory()
   vi.restoreAllMocks()
   document.body.innerHTML = ''
 })

@@ -9,7 +9,7 @@
  * revert, cherry-pick, copy paths/hashes). Refresh is manual + on mount/
  * focus, plus a 5 s poll while the tab is visible (no file watcher — KISS).
  */
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode, type UIEvent } from 'react'
 import {
   Button, IconBranchOutline16, IconChevronRightOutline14, IconCodeOutline16, IconCopyOutline16, IconEllipsisOutline16, IconRefreshOutline16,
   IconTrashOutline16, Input, Menu, Modal, writeClipboard,
@@ -118,6 +118,28 @@ interface ConfirmState {
 /** History batch size: the log loads lazily in pages so a long history never
  *  floods the panel at once (the end of the log is reached by paging). */
 const LOG_BATCH = 20
+
+/** Folding state of the four sections. */
+type SectionState = { changes: boolean; stash: boolean; tag: boolean; history: boolean }
+const DEFAULT_SECTIONS: SectionState = { changes: true, stash: false, tag: false, history: true }
+
+/**
+ * What a Git view remembers across remounts (the shell unmounts a tab's body
+ * when another tab is shown): folding, how much history was paged in, and
+ * the scroll offset of every scroll box, keyed by session.
+ */
+interface ViewMemory { expanded: SectionState; logCount: number; scroll: Record<string, number> }
+const viewMemory = new Map<string, ViewMemory>()
+/** Forget every remembered view (tests isolate cases with it). */
+export function resetViewMemory(): void { viewMemory.clear() }
+function memoryFor(sessionId: string): ViewMemory {
+  let memory = viewMemory.get(sessionId)
+  if (memory === undefined) {
+    memory = { expanded: { ...DEFAULT_SECTIONS }, logCount: 0, scroll: {} }
+    viewMemory.set(sessionId, memory)
+  }
+  return memory
+}
 /** Background status poll interval while the panel is visible. */
 const AUTO_REFRESH_MS = 5000
 
@@ -200,12 +222,24 @@ export function GitView(props: {
   const [historyMenu, setHistoryMenu] = useState<{ entry: GitLogEntry; x: number; y: number } | null>(null)
   /** The pending destructive action awaiting confirmation. */
   const [confirm, setConfirm] = useState<ConfirmState | null>(null)
-  /** Change-group folding is intentionally local to this mounted Git view. */
-  const [expandedSections, setExpandedSections] = useState({ changes: true, stash: false, tag: false, history: true })
+  const memory = memoryFor(scope.sessionId)
+  const [expandedSections, setExpandedSections] = useState<SectionState>(() => ({ ...memory.expanded }))
+  useEffect(() => { memory.expanded = expandedSections }, [memory, expandedSections])
+  /** Scroll boxes report their offset here; the first render after a remount puts it back. */
+  const rootRef = useRef<HTMLDivElement>(null)
+  const scrollProps = (key: string) => ({
+    'data-scroll-key': key,
+    onScroll: (event: UIEvent<HTMLDivElement>) => { memory.scroll[key] = event.currentTarget.scrollTop },
+  })
 
   /** How much history is on screen, so a background refresh re-reads that much, not just page one. */
-  const logCountRef = useRef(0)
-  logCountRef.current = logEntries.length
+  const logCountRef = useRef(memory.logCount)
+  useEffect(() => {
+    if (logEntries.length > 0) {
+      logCountRef.current = logEntries.length
+      memory.logCount = logEntries.length
+    }
+  }, [memory, logEntries])
 
   /** Reload everything; `silent` skips the loading placeholder (background polls). */
   const refresh = useCallback(async (silent = false): Promise<void> => {
@@ -244,6 +278,17 @@ export function GitView(props: {
   }, [scope.sessionId, scope.cwd])
 
   useEffect(() => { void refresh() }, [refresh])
+
+  // Restore every scroll box once the first load has painted the lists.
+  const restoredRef = useRef(false)
+  useLayoutEffect(() => {
+    if (loading || restoredRef.current || rootRef.current === null) return
+    restoredRef.current = true
+    for (const box of rootRef.current.querySelectorAll<HTMLElement>('[data-scroll-key]')) {
+      const key = box.dataset.scrollKey!
+      if (memory.scroll[key] !== undefined) box.scrollTop = memory.scroll[key]
+    }
+  }, [loading, memory])
 
   // Keep the panel current without a file watcher: poll while the tab is
   // visible, and re-read when the window regains focus. Skipped mid-operation
@@ -671,7 +716,7 @@ export function GitView(props: {
   }
 
   return (
-    <div className={css.git}>
+    <div className={css.git} ref={rootRef} {...scrollProps('root')}>
       <div className={css.gitHeader}>
         <select
           className={css.gitBranchSelect}
@@ -785,7 +830,7 @@ export function GitView(props: {
               {entries.length > 0 && <span className={css.gitSectionHint}>{t('tickToStage')}</span>}
             </div>
             {expandedSections.changes && (
-              <div id={`git-changes-${viewId}`} className={`${css.gitSectionBody} ${css.gitSectionBodyChanges}`}>
+              <div id={`git-changes-${viewId}`} className={`${css.gitSectionBody} ${css.gitSectionBodyChanges}`} {...scrollProps('changes')}>
                 {entries.length === 0 && (
                   <div className={css.gitClean}>
                     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="9" /><path d="M8 12l3 3 5-6" /></svg>
@@ -808,7 +853,7 @@ export function GitView(props: {
             </div>
             {stashError !== null && <div className={css.gitError}>{stashError}</div>}
             {expandedSections.stash && (
-              <div id={`git-stash-entries-${viewId}`} className={css.gitSectionBody}>
+              <div id={`git-stash-entries-${viewId}`} className={css.gitSectionBody} {...scrollProps('stash')}>
                 {stashEntries.length === 0 && <div className={css.gitEmpty}>{t('noChanges')}</div>}
                 {stashEntries.map(entry => (
                   <div key={entry.ref} className={css.gitRow}>
@@ -838,7 +883,7 @@ export function GitView(props: {
             </div>
             {tagError !== null && <div className={css.gitError}>{tagError}</div>}
             {expandedSections.tag && (
-              <div id={`git-tag-entries-${viewId}`} className={css.gitSectionBody}>
+              <div id={`git-tag-entries-${viewId}`} className={css.gitSectionBody} {...scrollProps('tag')}>
                 {tagEntries.length === 0 && <div className={css.gitEmpty}>{t('noChanges')}</div>}
                 {tagEntries.map(entry => (
                   <div key={entry.name} className={css.gitRow}>
@@ -873,7 +918,7 @@ export function GitView(props: {
               </div>
             )}
             {expandedSections.history && (
-            <div id={`git-history-${viewId}`} className={`${css.gitSectionBody} ${css.gitSectionBodyHistory}`}>
+            <div id={`git-history-${viewId}`} className={`${css.gitSectionBody} ${css.gitSectionBodyHistory}`} {...scrollProps('history')}>
             {logEntries.map((entry, index) => (
               <div
                 key={entry.hashFull}
