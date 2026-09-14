@@ -11,7 +11,7 @@
  */
 import { useCallback, useEffect, useId, useState, type MouseEvent, type ReactNode } from 'react'
 import {
-  Button, IconBranchOutline16, IconChevronRightOutline14, IconCodeOutline16, IconCopyOutline16, IconRefreshOutline16,
+  Button, IconBranchOutline16, IconChevronRightOutline14, IconCodeOutline16, IconCopyOutline16, IconEllipsisOutline16, IconRefreshOutline16,
   IconTrashOutline16, Input, Menu, Modal, writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { GitLogEntry, GitOperation, GitStashEntry, GitStatusEntry, GitStatusResult, GitTagEntry, GitWorktree, SessionScope } from './api.ts'
@@ -152,7 +152,7 @@ export function GitView(props: {
   /** The pending destructive action awaiting confirmation. */
   const [confirm, setConfirm] = useState<ConfirmState | null>(null)
   /** Change-group folding is intentionally local to this mounted Git view. */
-  const [expandedSections, setExpandedSections] = useState({ staged: true, unstaged: true, untracked: true, stash: true, tag: true })
+  const [expandedSections, setExpandedSections] = useState({ changes: true, stash: false, tag: false, history: true })
 
   const refresh = useCallback(async (): Promise<void> => {
     setLoading(true)
@@ -251,19 +251,6 @@ export function GitView(props: {
     }
   }
 
-  /** Stage one visual group without unexpectedly staging the sibling group. */
-  const stageGroup = async (entries: GitStatusEntry[]): Promise<void> => {
-    setBusy(true)
-    setCommitError(null)
-    try {
-      for (const entry of entries) await api.gitStage(scope, entry.path)
-      await refresh()
-    } catch (reason) {
-      setCommitError(reason instanceof Error ? reason.message : String(reason))
-    } finally {
-      setBusy(false)
-    }
-  }
 
   /** Run one stash operation, then refresh; failures surface like a failed commit. */
   const runStashAction = async (action: () => Promise<unknown>): Promise<void> => {
@@ -342,16 +329,18 @@ export function GitView(props: {
     }
   }
 
-  const syncRemote = async (action: 'fetch' | 'fetch-all' | 'push'): Promise<void> => {
+  /** 'sync' = fetch, then push when the branch is ahead (the header button). */
+  const syncRemote = async (action: 'sync' | 'fetch-all' | 'push'): Promise<void> => {
     if (busy) return
     setBusy(true)
     setCommitError(null)
     try {
       if (action === 'push') await api.gitPush(scope)
       else await api.gitFetch(scope, action === 'fetch-all')
+      if (action === 'sync' && (status?.ahead ?? 0) > 0) await api.gitPush(scope)
       await refresh()
     } catch (reason) {
-      const label = action === 'push' ? t('pushError') : t('fetchError')
+      const label = action === 'sync' ? t('syncError') : action === 'push' ? t('pushError') : t('fetchError')
       setCommitError(`${label}: ${reason instanceof Error ? reason.message : String(reason)}`)
     } finally {
       setBusy(false)
@@ -499,20 +488,32 @@ export function GitView(props: {
     setHistoryMenu({ entry, x: event.clientX, y: event.clientY })
   }
 
-  const stagedEntries = (status?.entries ?? []).filter(isStagedEntry)
-  const unstagedEntries = (status?.entries ?? []).filter(entry => isUnstagedEntry(entry) && !isUntracked(entry))
-  const untrackedEntries = (status?.entries ?? []).filter(isUntracked)
-  /** Whether there is anything to stash at all (the three change groups). */
-  const changedCount = stagedEntries.length + unstagedEntries.length + untrackedEntries.length
-  const discardableCount = new Set((status?.entries ?? []).filter(entry => !isUntracked(entry)).map(entry => entry.path)).size
+  const entries = status?.entries ?? []
+  const stagedEntries = entries.filter(isStagedEntry)
+  /** Whether "stage all" has nothing left to do (every row fully staged). */
+  const allStaged = entries.length > 0 && entries.every(entry => isStagedEntry(entry) && !isUnstagedEntry(entry))
+  const discardableCount = new Set(entries.filter(entry => !isUntracked(entry)).map(entry => entry.path)).size
 
   const toggleSection = (section: keyof typeof expandedSections): void => {
     setExpandedSections(current => ({ ...current, [section]: !current[section] }))
   }
 
-  const renderEntry = (entry: GitStatusEntry, staged: boolean): ReactNode => {
+  /** One row per path: the checkbox IS the stage toggle ('MM' shows indeterminate). */
+  const renderEntry = (entry: GitStatusEntry): ReactNode => {
+    const staged = isStagedEntry(entry) && !isUnstagedEntry(entry)
+    const partial = isStagedEntry(entry) && isUnstagedEntry(entry)
     return (
-      <div key={`${staged ? 's' : 'u'}:${entry.path}`} className={css.gitRow}>
+      <div key={entry.path} className={css.gitRow}>
+        <input
+          type="checkbox"
+          className={css.gitCheck}
+          checked={staged}
+          ref={(el) => { if (el !== null) el.indeterminate = partial }}
+          aria-label={staged ? t('unstage') : t('stage')}
+          title={staged ? t('unstage') : t('stage')}
+          disabled={busy}
+          onChange={() => { void stageEntry(entry, staged) }}
+        />
         <button
           type="button"
           className={css.gitRowMain}
@@ -523,16 +524,7 @@ export function GitView(props: {
           <span className={css.gitBadge}>{badgeOf(entry)}</span>
           <span className={css.gitName}>{entry.path}</span>
         </button>
-        <button
-          type="button"
-          className={css.iconButton}
-          aria-label={staged ? t('unstage') : t('stage')}
-          title={staged ? t('unstage') : t('stage')}
-          disabled={busy}
-          onClick={() => { void stageEntry(entry, staged) }}
-        >
-          {staged ? <IconTrashOutline16 /> : <IconBranchOutline16 />}
-        </button>
+        {(isUntracked(entry) || staged) && <span className={css.gitRowHint}>{isUntracked(entry) ? t('untracked') : t('staged')}</span>}
       </div>
     )
   }
@@ -549,11 +541,21 @@ export function GitView(props: {
           {(status?.branch ?? '') !== '' && <option value={status!.branch}>{status!.branch}</option>}
           {branchNames.filter(name => name !== status?.branch).map(name => <option key={name} value={name}>{name}</option>)}
         </select>
+        <button
+          type="button"
+          className={css.gitSyncButton}
+          title={t('syncTitle')}
+          disabled={busy || (status !== null && !status.isRepo) || status?.branch === 'HEAD'}
+          onClick={() => { void syncRemote('sync') }}
+        >
+          <IconRefreshOutline16 size={14} />
+          <span>{t('sync')}</span>
+          {(status?.ahead ?? 0) > 0 && <span className={css.gitSyncBadge}>↑{status!.ahead}</span>}
+        </button>
         <Menu
           open={branchMenuOpen}
           onClose={() => { setBranchMenuOpen(false) }}
           items={[
-            { id: 'fetch', label: t('fetch'), icon: <IconRefreshOutline16 size={14} /> },
             { id: 'fetch-all', label: t('fetchAll'), icon: <IconRefreshOutline16 size={14} /> },
             { id: 'push', label: t('pushBranch'), icon: <IconBranchOutline16 size={14} />, disabled: status?.branch === 'HEAD' },
             { type: 'separator', id: 'remote-separator' },
@@ -561,11 +563,14 @@ export function GitView(props: {
             { id: 'rebase', label: t('rebaseBranch'), icon: <IconRefreshOutline16 size={14} />, disabled: branchNames.every(name => name === status?.branch) },
             { type: 'separator', id: 'branch-separator' },
             { id: 'worktree', label: t('worktrees'), icon: <IconBranchOutline16 size={14} /> },
+            { type: 'separator', id: 'refresh-separator' },
+            { id: 'refresh', label: t('refresh'), icon: <IconRefreshOutline16 size={14} /> },
           ]}
           onSelect={(id) => {
             const branch = branchNames.find(name => name !== status?.branch) ?? null
             setBranchMenuOpen(false)
-            if (id === 'fetch' || id === 'fetch-all' || id === 'push') void syncRemote(id)
+            if (id === 'fetch-all' || id === 'push') void syncRemote(id)
+            if (id === 'refresh') void refresh()
             if (id === 'merge') setMergeSource(branch)
             if (id === 'rebase') setRebaseTarget(branch)
             if (id === 'worktree') {
@@ -587,30 +592,14 @@ export function GitView(props: {
               className={css.iconButton}
               aria-label={t('branchActions')}
               title={t('branchActions')}
-              disabled={busy || (status !== null && !status.isRepo)}
+              disabled={busy}
               onClick={() => { setBranchMenuOpen(open => !open) }}
             >
-              <IconBranchOutline16 size={14} />
+              <IconEllipsisOutline16 size={16} />
             </button>
           )}
         />
-        <button
-          type="button"
-          className={css.iconButton}
-          aria-label={t('refresh')}
-          title={t('refresh')}
-          onClick={() => { void refresh() }}
-        >
-          <IconRefreshOutline16 size={14} />
-        </button>
       </div>
-
-      {status?.isRepo === true && (status.entries.length > 0 || status.ahead > 0) && (
-        <div className={css.gitNotices}>
-          {status.entries.length > 0 && <div className={`${css.gitNotice} ${css.gitNoticeDirty}`}>{t('uncommittedReminder', { count: status.entries.length })}</div>}
-          {status.ahead > 0 && <div className={`${css.gitNotice} ${css.gitNoticeAhead}`}>{t('unpushedReminder', { count: status.ahead })}</div>}
-        </div>
-      )}
 
       {loading && <div className={css.gitPlaceholder}>{t('loading')}</div>}
       {!loading && error !== null && <div className={css.gitError}>{error}</div>}
@@ -627,80 +616,39 @@ export function GitView(props: {
 
       {status !== null && status.isRepo && (
         <>
-          {discardableCount > 0 && (
-            <div className={css.gitChangesActions}>
-              <button
-                type="button"
-                className={`${css.gitLink} ${css.gitDangerLink}`}
-                disabled={busy}
-                onClick={() => {
-                  runConfirmed({
-                    title: t('discardAllTitle'),
-                    description: t('discardAllDesc', { count: discardableCount }),
-                    confirmLabel: t('discardAll'),
-                    onConfirm: () => api.gitDiscardAll(scope),
-                  })
-                }}
-              >
-                {t('discardAll')}
-              </button>
-            </div>
-          )}
-
           <div className={css.gitSection}>
             <div className={css.gitSectionHeader}>
-              <button type="button" className={css.gitSectionToggle} aria-expanded={expandedSections.staged} aria-controls={`git-staged-changes-${viewId}`} onClick={() => { toggleSection('staged') }}>
-                <IconChevronRightOutline14 className={expandedSections.staged ? css.gitSectionChevronExpanded : css.gitSectionChevron} />
-                <span>{t('staged')} ({stagedEntries.length})</span>
+              <button type="button" className={css.gitSectionToggle} aria-expanded={expandedSections.changes} aria-controls={`git-changes-${viewId}`} onClick={() => { toggleSection('changes') }}>
+                <IconChevronRightOutline14 className={expandedSections.changes ? css.gitSectionChevronExpanded : css.gitSectionChevron} />
+                <span>{t('changes')} ({entries.length})</span>
               </button>
-              {stagedEntries.length > 0 && (
-                <button type="button" className={css.gitLink} disabled={busy} onClick={() => { void stageAll(true) }}>
-                  {t('unstageAll')}
+              {entries.length > 0 && (
+                <button type="button" className={css.gitLink} disabled={busy} onClick={() => { void stageAll(allStaged) }}>
+                  {allStaged ? t('unstageAll') : t('stageAll')}
+                </button>
+              )}
+              {discardableCount > 0 && (
+                <button
+                  type="button"
+                  className={`${css.gitLink} ${css.gitDangerLink}`}
+                  disabled={busy}
+                  onClick={() => {
+                    runConfirmed({
+                      title: t('discardAllTitle'),
+                      description: t('discardAllDesc', { count: discardableCount }),
+                      confirmLabel: t('discardAll'),
+                      onConfirm: () => api.gitDiscardAll(scope),
+                    })
+                  }}
+                >
+                  {t('discardAll')}
                 </button>
               )}
             </div>
-            {expandedSections.staged && (
-              <div id={`git-staged-changes-${viewId}`}>
-                {stagedEntries.length === 0 && <div className={css.gitEmpty}>{t('noChanges')}</div>}
-                {stagedEntries.map(entry => renderEntry(entry, true))}
-              </div>
-            )}
-          </div>
-          <div className={css.gitSection}>
-            <div className={css.gitSectionHeader}>
-              <button type="button" className={css.gitSectionToggle} aria-expanded={expandedSections.unstaged} aria-controls={`git-unstaged-changes-${viewId}`} onClick={() => { toggleSection('unstaged') }}>
-                <IconChevronRightOutline14 className={expandedSections.unstaged ? css.gitSectionChevronExpanded : css.gitSectionChevron} />
-                <span>{t('unstaged')} ({unstagedEntries.length})</span>
-              </button>
-              {unstagedEntries.length > 0 && (
-                <button type="button" className={css.gitLink} disabled={busy} onClick={() => { void stageGroup(unstagedEntries) }}>
-                  {t('stageAll')}
-                </button>
-              )}
-            </div>
-            {expandedSections.unstaged && (
-              <div id={`git-unstaged-changes-${viewId}`}>
-                {unstagedEntries.length === 0 && <div className={css.gitEmpty}>{t('noChanges')}</div>}
-                {unstagedEntries.map(entry => renderEntry(entry, false))}
-              </div>
-            )}
-          </div>
-          <div className={css.gitSection}>
-            <div className={css.gitSectionHeader}>
-              <button type="button" className={css.gitSectionToggle} aria-expanded={expandedSections.untracked} aria-controls={`git-untracked-changes-${viewId}`} onClick={() => { toggleSection('untracked') }}>
-                <IconChevronRightOutline14 className={expandedSections.untracked ? css.gitSectionChevronExpanded : css.gitSectionChevron} />
-                <span>{t('untracked')} ({untrackedEntries.length})</span>
-              </button>
-              {untrackedEntries.length > 0 && (
-                <button type="button" className={css.gitLink} disabled={busy} onClick={() => { void stageGroup(untrackedEntries) }}>
-                  {t('stageAll')}
-                </button>
-              )}
-            </div>
-            {expandedSections.untracked && (
-              <div id={`git-untracked-changes-${viewId}`}>
-                {untrackedEntries.length === 0 && <div className={css.gitEmpty}>{t('noChanges')}</div>}
-                {untrackedEntries.map(entry => renderEntry(entry, false))}
+            {expandedSections.changes && (
+              <div id={`git-changes-${viewId}`}>
+                {entries.length === 0 && <div className={css.gitEmpty}>{t('cleanTree')}</div>}
+                {entries.map(renderEntry)}
               </div>
             )}
           </div>
@@ -714,7 +662,7 @@ export function GitView(props: {
               <button
                 type="button"
                 className={css.gitLink}
-                disabled={busy || changedCount === 0}
+                disabled={busy || entries.length === 0}
                 onClick={() => { void runStashAction(() => api.gitStash(scope)) }}
               >
                 {t('stashSave')}
@@ -780,8 +728,9 @@ export function GitView(props: {
           </div>
 
           <div className={css.gitCommit}>
-            <Input
+            <textarea
               className={css.gitCommitInput}
+              rows={3}
               placeholder={t('commitPlaceholder')}
               value={commitMsg}
               disabled={busy}
@@ -790,20 +739,30 @@ export function GitView(props: {
                 if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') void commit()
               }}
             />
-            <button
-              type="button"
-              className={css.gitCommitButton}
-              disabled={busy || commitMsg.trim() === '' || stagedEntries.length === 0}
-              onClick={() => { void commit() }}
-            >
-              {t('commit')}
-            </button>
+            <div className={css.gitCommitFooter}>
+              <span className={css.gitCommitHint}>
+                {stagedEntries.length > 0 ? t('commitHint', { count: stagedEntries.length }) : t('commitHintEmpty')}
+              </span>
+              <button
+                type="button"
+                className={css.gitCommitButton}
+                disabled={busy || commitMsg.trim() === '' || stagedEntries.length === 0}
+                onClick={() => { void commit() }}
+              >
+                {t('commit')}
+              </button>
+            </div>
           </div>
           {commitError !== null && <div className={css.gitError}>{commitError}</div>}
 
           <div className={css.gitSection}>
-            <div className={css.gitSectionHeader}><span>{t('history')}</span></div>
-            {logEntries.map(entry => (
+            <div className={css.gitSectionHeader}>
+              <button type="button" className={css.gitSectionToggle} aria-expanded={expandedSections.history} aria-controls={`git-history-${viewId}`} onClick={() => { toggleSection('history') }}>
+                <IconChevronRightOutline14 className={expandedSections.history ? css.gitSectionChevronExpanded : css.gitSectionChevron} />
+                <span>{t('history')}</span>
+              </button>
+            </div>
+            {expandedSections.history && logEntries.map(entry => (
               <div
                 key={entry.hashFull}
                 role="button"
@@ -831,7 +790,7 @@ export function GitView(props: {
                 </span>
               </div>
             ))}
-            {!logEnded && (
+            {expandedSections.history && !logEnded && (
               <button
                 type="button"
                 className={css.gitLogMore}

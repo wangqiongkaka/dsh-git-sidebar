@@ -57,6 +57,12 @@ function renderGitView(): { container: HTMLDivElement; root: Root } {
   return { container, root }
 }
 
+/** Stash and Tag start folded; open one by its list id prefix. */
+function expandSection(container: HTMLElement, prefix: string): void {
+  const toggle = container.querySelector<HTMLButtonElement>(`button[aria-controls^="${prefix}"]`)!
+  if (toggle.getAttribute('aria-expanded') === 'false') act(() => { toggle.click() })
+}
+
 function discardButtons(): HTMLButtonElement[] {
   return [...document.querySelectorAll<HTMLButtonElement>('button')].filter(button =>
     button.textContent?.trim() === 'Discard all changes' || button.textContent?.trim() === '放弃所有更改',
@@ -72,6 +78,7 @@ beforeEach(() => {
   vi.spyOn(api, 'gitDiscardAll').mockResolvedValue({ ok: true })
   vi.spyOn(api, 'gitStashList').mockResolvedValue({ entries: stashStack })
   vi.spyOn(api, 'gitStash').mockResolvedValue({ ok: true })
+  vi.spyOn(api, 'gitStage').mockResolvedValue({ ok: true })
   vi.spyOn(api, 'gitStashPop').mockResolvedValue({ ok: true })
   vi.spyOn(api, 'gitTags').mockResolvedValue({ entries: tagList })
   vi.spyOn(api, 'gitTagCreate').mockResolvedValue({ ok: true })
@@ -85,28 +92,30 @@ afterEach(() => {
 })
 
 describe('GitView change groups', () => {
-  it('renders staged, unstaged, and untracked groups expanded and folds them independently', async () => {
+  it('renders one changes list with stage checkboxes; stash and tag start folded', async () => {
     const { container, root } = renderGitView()
     try {
       await flush()
       const toggles = [...container.querySelectorAll<HTMLButtonElement>('button[aria-controls^="git-"]')]
       expect(toggles.map(button => button.getAttribute('aria-controls')?.replace(/-:.*$/, ''))).toEqual([
-        'git-staged-changes',
-        'git-unstaged-changes',
-        'git-untracked-changes',
+        'git-changes',
         'git-stash-entries',
         'git-tag-entries',
+        'git-history',
       ])
-      expect(toggles.map(button => button.getAttribute('aria-expanded'))).toEqual(['true', 'true', 'true', 'true', 'true'])
+      expect(toggles.map(button => button.getAttribute('aria-expanded'))).toEqual(['true', 'false', 'false', 'true'])
       expect(container.textContent).toContain('staged.ts')
       expect(container.textContent).toContain('unstaged.ts')
       expect(container.textContent).toContain('new.ts')
+      const checks = [...container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')]
+      expect(checks.map(check => check.checked)).toEqual([true, false, false])
 
-      act(() => { toggles[1]!.click() })
-      expect(toggles[1]!.getAttribute('aria-expanded')).toBe('false')
-      expect(container.textContent).toContain('staged.ts')
-      expect(container.textContent).not.toContain('unstaged.ts')
-      expect(container.textContent).toContain('new.ts')
+      await act(async () => { checks[1]!.click(); await Promise.resolve() })
+      expect(api.gitStage).toHaveBeenCalledWith({ sessionId: 'session-1', cwd: '/repo' }, 'unstaged.ts')
+
+      act(() => { toggles[0]!.click() })
+      expect(toggles[0]!.getAttribute('aria-expanded')).toBe('false')
+      expect(container.textContent).not.toContain('staged.ts')
     } finally {
       act(() => { root.unmount() })
       container.remove()
@@ -181,6 +190,7 @@ describe('GitView stash', () => {
     const { container, root } = renderGitView()
     try {
       await flush()
+      expandSection(container, 'git-stash-entries')
       expect(container.textContent).toContain('Stash (2)')
       expect(container.textContent).toContain('stash@{0}')
       expect(container.textContent).toContain('WIP on main: 1a2b3c4 newest')
@@ -230,6 +240,7 @@ describe('GitView stash', () => {
     const { container, root } = renderGitView()
     try {
       await flush()
+      expandSection(container, 'git-stash-entries')
       const row = container.querySelector<HTMLButtonElement>('[id^="git-stash-entries-"] button')!
       await act(async () => { row.click(); await Promise.resolve() })
       const pop = menuItem('Pop')
@@ -258,6 +269,8 @@ describe('GitView stash errors', () => {
     const { container, root } = renderGitView()
     try {
       await flush()
+      expandSection(container, 'git-tag-entries')
+      expandSection(container, 'git-stash-entries')
       const row = container.querySelector<HTMLButtonElement>('[id^="git-stash-entries-"] button')!
       await act(async () => { row.click(); await Promise.resolve() })
       await act(async () => { menuItem('Pop')!.click(); await Promise.resolve() })
@@ -309,6 +322,7 @@ describe('GitView tags', () => {
     const { container, root } = renderGitView()
     try {
       await flush()
+      expandSection(container, 'git-tag-entries')
       expect(container.textContent).toContain('Tag (2)')
       const rows = [...container.querySelectorAll('[id^="git-tag-entries-"] button')].map(node => node.textContent ?? '')
       expect(rows[0]).toContain('v0.2.0')
@@ -399,6 +413,7 @@ describe('GitView tags', () => {
     const { container, root } = renderGitView()
     try {
       await flush()
+      expandSection(container, 'git-tag-entries')
       const row = container.querySelector<HTMLButtonElement>('[id^="git-tag-entries-"] button')!
       await act(async () => { row.click(); await Promise.resolve() })
       const push = menuItem('Push to remote') ?? menuItem('推送到远端')
