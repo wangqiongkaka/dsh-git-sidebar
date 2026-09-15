@@ -754,8 +754,8 @@ export function GitView(props: {
         >
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M5 13V3M2 6l3-3 3 3M11 3v10M8 10l3 3 3-3" /></svg>
           <span>{t('sync')}</span>
-          {(status?.behind ?? 0) > 0 && <span className={css.gitSyncBadge}>↓{status!.behind}</span>}
-          {(status?.ahead ?? 0) > 0 && <span className={css.gitSyncBadge}>↑{status!.ahead}</span>}
+          {(status?.behind ?? 0) > 0 && <span className={`${css.gitSyncBadge} ${css.gitSyncBadgeBehind}`}>↓{status!.behind}</span>}
+          {(status?.ahead ?? 0) > 0 && <span className={`${css.gitSyncBadge} ${css.gitSyncBadgeAhead}`}>↑{status!.ahead}</span>}
         </button>
         <Menu
           open={branchMenuOpen}

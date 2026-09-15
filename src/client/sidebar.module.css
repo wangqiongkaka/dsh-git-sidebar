@@ -84,8 +84,15 @@
   padding: 0 5px;
   border-radius: 999px;
   background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-brand-primary);
   font: var(--dsw-font-xxxs-strong-11);
+}
+
+.gitSyncBadgeAhead {
+  color: var(--dsw-alias-state-warn-label);
+}
+
+.gitSyncBadgeBehind {
+  color: var(--dsw-alias-state-success-primary);
 }
 
 .gitCheck {
