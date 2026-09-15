@@ -55,4 +55,5 @@ pnpm dsh plugin --profile web add file:/绝对路径/dsh-git-sidebar-<version>.t
 ## 发布
 
 - 改版本号：`package.json` 的 `version` 与 README 安装命令里的 tgz 文件名同步改，删除旧 tgz。
+- README 随版本一并更新：功能节覆盖本版本的实际行为（新增或变化的功能写进对应条目），验证节按当次实际运行 `pnpm typecheck` / `pnpm test` / `pnpm build` 的结果改写测试数量与实测范围；更新后的 README 只描述当前版本，不残留旧版本的说法。
 - 提交信息用中文，首行 `feat:` / `fix:` / `docs:` 前缀，正文按条列出改动；推送到 `origin main`。

@@ -27,7 +27,7 @@ export function apply(ctx: Context): void {
   })
   ctx.effect(() => ctx.sidebarRightTabs.register({
     id: 'dsh-git-sidebar', kind: 'dsh-git', title: () => t('git'),
-    guide: [{ order: 20, title: () => t('git'), description: () => t('gitGuideDesc'), icon: IconBranchOutline16 }],
+    guide: [{ id: 'git', order: 20, title: () => t('git'), description: () => t('gitGuideDesc'), icon: IconBranchOutline16 }],
   }))
   ctx.effect(() => ctx.sidebarRightTabs.register({
     id: 'dsh-git-sidebar/diff', kind: 'dsh-git-diff',
