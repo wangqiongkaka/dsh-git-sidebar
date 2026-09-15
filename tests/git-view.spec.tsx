@@ -89,6 +89,8 @@ beforeEach(() => {
   vi.spyOn(api, 'gitStashList').mockResolvedValue({ entries: stashStack })
   vi.spyOn(api, 'gitStash').mockResolvedValue({ ok: true })
   vi.spyOn(api, 'gitStage').mockResolvedValue({ ok: true })
+  vi.spyOn(api, 'gitWipCommit').mockResolvedValue({ ok: true })
+  vi.spyOn(api, 'gitWipUndo').mockResolvedValue({ ok: true })
   vi.spyOn(api, 'gitStashPop').mockResolvedValue({ ok: true })
   vi.spyOn(api, 'gitTags').mockResolvedValue({ entries: tagList })
   vi.spyOn(api, 'gitTagCreate').mockResolvedValue({ ok: true })
@@ -246,6 +248,56 @@ describe('GitView stash', () => {
       expect(api.gitStash).toHaveBeenCalledWith({ sessionId: 'session-1', cwd: '/repo' })
       expect(api.gitStatus).toHaveBeenCalledTimes(2)
       expect(api.gitStashList).toHaveBeenCalledTimes(2)
+    } finally {
+      act(() => { root.unmount() })
+      container.remove()
+    }
+  })
+
+  it('commits as WIP from the more menu and only offers undo when HEAD is a WIP commit', async () => {
+    const menuButton = (labels: string[]): HTMLButtonElement => [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .find(button => labels.includes(button.textContent?.trim() ?? ''))!
+    vi.mocked(api.gitLog).mockResolvedValue([{ ...logEntry, subject: 'WIP', refs: 'HEAD -> main' }])
+    const { container, root } = renderGitView()
+    try {
+      await flush()
+      openMoreMenu()
+      expect(menuButton(['Undo WIP…', '撤销 WIP…']).disabled).toBe(false)
+      await act(async () => { menuButton(['Commit as WIP', '提交为 WIP']).click(); await Promise.resolve() })
+      await flush()
+      expect(api.gitWipCommit).toHaveBeenCalledWith({ sessionId: 'session-1', cwd: '/repo' })
+      expect(api.gitStatus).toHaveBeenCalledTimes(2)
+
+      vi.mocked(api.gitLog).mockResolvedValue([{ ...logEntry, refs: 'HEAD -> main' }])
+      openMoreMenu()
+      await act(async () => { menuButton(['Refresh', '刷新']).click(); await Promise.resolve() })
+      await flush()
+      openMoreMenu()
+      expect(menuButton(['Undo WIP…', '撤销 WIP…']).disabled).toBe(true)
+    } finally {
+      act(() => { root.unmount() })
+      container.remove()
+    }
+  })
+
+  it('asks before sync would push a WIP commit, and pushes only after confirming', async () => {
+    vi.spyOn(api, 'gitFetch').mockResolvedValue({ ok: true })
+    vi.spyOn(api, 'gitPush').mockResolvedValue({ ok: true })
+    vi.mocked(api.gitStatus).mockResolvedValue({ ...dirtyStatus, ahead: 1 })
+    vi.mocked(api.gitLog).mockResolvedValue([{ ...logEntry, subject: 'WIP', refs: 'HEAD -> main' }])
+    const buttons = (labels: string[]): HTMLButtonElement[] => [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .filter(button => labels.some(label => (button.textContent?.trim() ?? '').startsWith(label)))
+    const { container, root } = renderGitView()
+    try {
+      await flush()
+      act(() => { buttons(['Sync', '同步'])[0]!.click() })
+      expect(api.gitPush).not.toHaveBeenCalled()
+      expect(document.body.textContent).toMatch(/Push WIP commit|推送 WIP 提交/)
+
+      await act(async () => { buttons(['Push anyway', '仍然推送'])[0]!.click(); await Promise.resolve() })
+      await flush()
+      expect(api.gitFetch).toHaveBeenCalledTimes(1)
+      expect(api.gitPush).toHaveBeenCalledWith({ sessionId: 'session-1', cwd: '/repo' })
     } finally {
       act(() => { root.unmount() })
       container.remove()

@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
 import { parseUnifiedDiff } from '../src/client/DiffView.tsx'
 import { defaultWorktreeDraft } from '../src/client/GitView.tsx'
-import { createTag, deleteTag, discardAll, parseLogLines, parsePorcelainZ, stash, stashList, stashPop, status, tags } from '../src/git.ts'
+import { createTag, deleteTag, discardAll, parseLogLines, parsePorcelainZ, stash, stashList, stashPop, status, tags, wipCommit, wipUndo } from '../src/git.ts'
 
 describe('git worktree defaults', () => {
   it('creates a new branch draft based on the current branch', () => {
@@ -301,6 +301,68 @@ describe('stash stack', () => {
       expect(readFileSync(join(dir, 'a.txt'), 'utf8')).toBe('changed a\n')
       expect(readFileSync(join(dir, 'loose.txt'), 'utf8')).toBe('untracked\n')
       expect(await stashList(dir)).toEqual([])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('WIP commit', () => {
+  const gitRun = (cwd: string, args: string[]): string => {
+    const result = spawnSync('git', ['-C', cwd, ...args], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: 'dsh-better-sidebar-test',
+        GIT_AUTHOR_EMAIL: 'test@dsh.invalid',
+        GIT_COMMITTER_NAME: 'dsh-better-sidebar-test',
+        GIT_COMMITTER_EMAIL: 'test@dsh.invalid',
+      },
+    })
+    if (result.status !== 0) throw new Error(result.stderr || `git ${args[0] ?? ''} failed`)
+    return result.stdout
+  }
+
+  // WHY: a WIP commit must sweep up untracked files too (otherwise the panel
+  // still shows changes), and undo must refuse to reset anything but a WIP
+  // commit so a real commit can never be lost through this menu.
+  it('commits every change as WIP, undoes it back to the working tree, and refuses to undo a real commit', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-sidebar-wip-'))
+    try {
+      gitRun(dir, ['init', '-q'])
+      gitRun(dir, ['checkout', '-q', '-b', 'main'])
+      writeFileSync(join(dir, 'a.txt'), 'original a\n')
+      gitRun(dir, ['add', '-A'])
+      gitRun(dir, ['commit', '-q', '-m', 'base'])
+
+      await expect(wipUndo(dir)).rejects.toThrow('not a WIP commit')
+
+      writeFileSync(join(dir, 'a.txt'), 'changed a\n')
+      writeFileSync(join(dir, 'loose.txt'), 'untracked\n')
+      await wipCommit(dir)
+      expect((await status(dir)).entries).toEqual([])
+      expect(gitRun(dir, ['log', '-1', '--format=%s']).trim()).toBe('WIP')
+
+      await wipUndo(dir)
+      expect(gitRun(dir, ['log', '-1', '--format=%s']).trim()).toBe('base')
+      expect((await status(dir)).entries).toEqual([
+        { path: 'a.txt', xy: ' M' },
+        { path: 'loose.txt', xy: '??' },
+      ])
+      expect(readFileSync(join(dir, 'a.txt'), 'utf8')).toBe('changed a\n')
+
+      // Once the WIP commit is on the upstream, undo must refuse (no force-push in the panel).
+      const remote = mkdtempSync(join(tmpdir(), 'dsh-sidebar-wip-remote-'))
+      try {
+        gitRun(remote, ['init', '-q', '--bare'])
+        gitRun(dir, ['remote', 'add', 'origin', remote])
+        await wipCommit(dir)
+        gitRun(dir, ['push', '-q', '-u', 'origin', 'main'])
+        await expect(wipUndo(dir)).rejects.toThrow('already pushed')
+        expect(gitRun(dir, ['log', '-1', '--format=%s']).trim()).toBe('WIP')
+      } finally {
+        rmSync(remote, { recursive: true, force: true })
+      }
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

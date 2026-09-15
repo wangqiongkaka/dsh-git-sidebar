@@ -432,6 +432,20 @@ export function GitView(props: {
   }
 
 
+  /** Stage everything and make a WIP commit; failures surface like a failed commit. */
+  const wipCommit = async (): Promise<void> => {
+    setBusy(true)
+    setCommitError(null)
+    try {
+      await api.gitWipCommit(scope)
+      await refresh()
+    } catch (reason) {
+      setCommitError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   /** Run one stash operation, then refresh; failures surface like a failed commit. */
   const runStashAction = async (action: () => Promise<unknown>): Promise<void> => {
     setBusy(true)
@@ -672,6 +686,23 @@ export function GitView(props: {
   const stagedEntries = entries.filter(isStagedEntry)
   /** Whether "stage all" has nothing left to do (every row fully staged). */
   const allStaged = entries.length > 0 && entries.every(entry => isStagedEntry(entry) && !isUnstagedEntry(entry))
+  // `%D` lists HEAD first, so the HEAD row is the one whose refs start with "HEAD".
+  const headIsWip = logEntries.find(entry => /^HEAD\b/.test(entry.refs))?.subject === 'WIP'
+
+  /** Sync / push, but ask first when that would publish a WIP commit (it cannot be undone from the panel afterwards). */
+  const syncGuarded = (action: 'sync' | 'fetch-all' | 'push'): void => {
+    const pushes = action === 'push' || (action === 'sync' && (status?.ahead ?? 0) > 0)
+    if (!pushes || !headIsWip) { void syncRemote(action); return }
+    runConfirmed({
+      title: t('wipPushTitle'),
+      description: t('wipPushDesc'),
+      confirmLabel: t('wipPushConfirm'),
+      onConfirm: async () => {
+        if (action === 'sync') await api.gitFetch(scope)
+        await api.gitPush(scope)
+      },
+    })
+  }
   const discardableCount = new Set(entries.filter(entry => !isUntracked(entry)).map(entry => entry.path)).size
 
   const toggleSection = (section: keyof typeof expandedSections): void => {
@@ -750,7 +781,7 @@ export function GitView(props: {
           className={css.gitSyncButton}
           title={t('syncTitle')}
           disabled={busy || (status !== null && !status.isRepo) || status?.branch === 'HEAD'}
-          onClick={() => { void syncRemote('sync') }}
+          onClick={() => { syncGuarded('sync') }}
         >
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M5 13V3M2 6l3-3 3 3M11 3v10M8 10l3 3 3-3" /></svg>
           <span>{t('sync')}</span>
@@ -773,6 +804,8 @@ export function GitView(props: {
             { type: 'label', id: 'label-worktree', text: t('groupWorkingTree') },
             { id: 'stage-all', label: allStaged ? t('unstageAll') : t('stageAll'), disabled: entries.length === 0 },
             { id: 'stash-save', label: t('stashSave'), disabled: entries.length === 0 },
+            { id: 'wip-commit', label: t('wipCommit'), disabled: entries.length === 0 },
+            { id: 'wip-undo', label: t('wipUndo'), disabled: !headIsWip },
             { id: 'tag-new', label: t('tagNewMenu') },
             { id: 'discard-all', label: t('discardAll'), danger: true, disabled: discardableCount === 0 },
             { type: 'separator', id: 'refresh-separator' },
@@ -781,10 +814,19 @@ export function GitView(props: {
           onSelect={(id) => {
             const branch = branchNames.find(name => name !== status?.branch) ?? null
             setBranchMenuOpen(false)
-            if (id === 'fetch-all' || id === 'push') void syncRemote(id)
+            if (id === 'fetch-all' || id === 'push') syncGuarded(id)
             if (id === 'refresh') void refresh()
             if (id === 'stage-all') void stageAll(allStaged)
             if (id === 'stash-save') void runStashAction(() => api.gitStash(scope))
+            if (id === 'wip-commit') void wipCommit()
+            if (id === 'wip-undo') {
+              runConfirmed({
+                title: t('wipUndoTitle'),
+                description: t('wipUndoDesc'),
+                confirmLabel: t('wipUndoConfirm'),
+                onConfirm: () => api.gitWipUndo(scope),
+              })
+            }
             if (id === 'tag-new') { setTagDraftError(null); setTagDraft({ commit: null, name: '', message: '' }) }
             if (id === 'discard-all') {
               runConfirmed({

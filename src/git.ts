@@ -15,6 +15,9 @@ import { basename, dirname, join, resolve, sep } from 'node:path'
 
 export type GitOperation = 'merge' | 'rebase'
 
+/** Subject of a throwaway WIP commit; `wipUndo` only resets a HEAD with exactly this subject. */
+export const WIP_SUBJECT = 'WIP'
+
 /** A parsed `git status --porcelain=v1 -z` entry. */
 export interface GitStatusEntry {
   path: string
@@ -281,6 +284,27 @@ export async function stashDrop(cwd: string, ref: string): Promise<void> {
 /** Commit the staged changes with a message (global identity untouched). */
 export async function commit(cwd: string, message: string): Promise<void> {
   await runGit(cwd, ['commit', '-m', message])
+}
+
+/** Stage everything (untracked included) and commit it as a throwaway "WIP" commit. */
+export async function wipCommit(cwd: string): Promise<void> {
+  await runGit(cwd, ['add', '-A'])
+  await runGit(cwd, ['commit', '-q', '-m', WIP_SUBJECT])
+}
+
+/**
+ * Drop the WIP commit at HEAD and put its changes back into the working tree
+ * (mixed reset, so they show up unstaged like before the WIP commit). Refuses
+ * when HEAD is not a WIP commit so a real commit can never be reset by accident.
+ */
+export async function wipUndo(cwd: string): Promise<void> {
+  const subject = (await runGit(cwd, ['log', '-1', '--format=%s'])).trim()
+  if (subject !== WIP_SUBJECT) throw new GitCommandError('HEAD is not a WIP commit', 'git-error', 'wip-undo')
+  // A WIP commit that already reached the upstream must not be reset away: the
+  // panel has no force-push, so the branches would diverge with no way back.
+  const pushed = await runGit(cwd, ['merge-base', '--is-ancestor', 'HEAD', '@{upstream}']).then(() => true, () => false)
+  if (pushed) throw new GitCommandError('WIP commit was already pushed; undo it from a terminal', 'git-error', 'wip-undo')
+  await runGit(cwd, ['reset', '-q', 'HEAD~1'])
 }
 
 /** Local branch names by latest commit time (newest first). */

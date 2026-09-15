@@ -225,6 +225,16 @@ export function buildApi(ctx: Context, readLimit: number): Record<string, (paylo
       await git.commit(cwd, message)
       return { ok: true }
     },
+    'git.wip-commit': async (payload) => {
+      const { cwd } = cwdOf(payload)
+      await git.wipCommit(cwd)
+      return { ok: true }
+    },
+    'git.wip-undo': async (payload) => {
+      const { cwd } = cwdOf(payload)
+      await git.wipUndo(cwd)
+      return { ok: true }
+    },
     'git.fetch': async (payload) => {
       const { cwd } = cwdOf(payload)
       await git.fetchRemote(cwd)

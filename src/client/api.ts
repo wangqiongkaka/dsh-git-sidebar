@@ -144,6 +144,12 @@ export const api = {
     call<{ ok: true }>('git.tag-push', scopePayload(scope, { name })),
   gitCommit: (scope: SessionScope, message: string) =>
     call<{ ok: true }>('git.commit', scopePayload(scope, { message })),
+  /** Stage everything and commit it as a "WIP" commit. */
+  gitWipCommit: (scope: SessionScope) =>
+    call<{ ok: true }>('git.wip-commit', scopePayload(scope, {})),
+  /** Reset the WIP commit at HEAD back into the working tree (rejected when HEAD is not a WIP commit). */
+  gitWipUndo: (scope: SessionScope) =>
+    call<{ ok: true }>('git.wip-undo', scopePayload(scope, {})),
   gitFetch: (scope: SessionScope, all = false) =>
     call<{ ok: true }>(all ? 'git.fetch-all' : 'git.fetch', scopePayload(scope, {})),
   gitPush: (scope: SessionScope) =>
