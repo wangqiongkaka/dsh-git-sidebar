@@ -32,7 +32,7 @@ pnpm pack
 从 DSH 源码目录安装打包产物：
 
 ```sh
-pnpm dsh plugin --profile web add file:/绝对路径/dsh-git-sidebar-0.1.3.tgz
+pnpm dsh plugin --profile web add file:/绝对路径/dsh-git-sidebar-0.1.4.tgz
 ```
 
 使用已安装的 DSH CLI 时去掉前面的 `pnpm`。重新启动对应 Web 服务后，关闭旧标签页，重新打开终端打印的 URL，在引导页选择「源代码管理」。已有标签页时可通过标签栏的「+」回到引导页。

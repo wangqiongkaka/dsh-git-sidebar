@@ -148,6 +148,9 @@ export const api = {
   gitWipCommit: (scope: SessionScope) =>
     call<{ ok: true }>('git.wip-commit', scopePayload(scope, {})),
   /** Reset the WIP commit at HEAD back into the working tree (rejected when HEAD is not a WIP commit). */
+  /** Unwind every unpushed commit into the working tree (`git reset @{upstream}`). */
+  gitResetToUpstream: (scope: SessionScope) =>
+    call<{ ok: true }>('git.reset-to-upstream', scopePayload(scope, {})),
   gitWipUndo: (scope: SessionScope) =>
     call<{ ok: true }>('git.wip-undo', scopePayload(scope, {})),
   gitFetch: (scope: SessionScope, all = false) =>

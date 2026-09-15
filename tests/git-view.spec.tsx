@@ -280,6 +280,33 @@ describe('GitView stash', () => {
     }
   })
 
+  it('offers reset-to-remote only when ahead, and unwinds after confirming', async () => {
+    vi.spyOn(api, 'gitResetToUpstream').mockResolvedValue({ ok: true })
+    vi.mocked(api.gitStatus).mockResolvedValue({ ...dirtyStatus, ahead: 2 })
+    const buttons = (labels: string[]): HTMLButtonElement[] => [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .filter(button => labels.includes(button.textContent?.trim() ?? ''))
+    const { container, root } = renderGitView()
+    try {
+      await flush()
+      openMoreMenu()
+      act(() => { buttons(['Reset to remote…', '回到远端状态…'])[0]!.click() })
+      expect(document.body.textContent).toMatch(/2 local commit|2 个提交/)
+      await act(async () => { buttons(['Reset to remote', '回到远端状态']).at(-1)!.click(); await Promise.resolve() })
+      await flush()
+      expect(api.gitResetToUpstream).toHaveBeenCalledWith({ sessionId: 'session-1', cwd: '/repo' })
+
+      vi.mocked(api.gitStatus).mockResolvedValue(dirtyStatus)
+      openMoreMenu()
+      await act(async () => { buttons(['Refresh', '刷新'])[0]!.click(); await Promise.resolve() })
+      await flush()
+      openMoreMenu()
+      expect(buttons(['Reset to remote…', '回到远端状态…'])[0]!.disabled).toBe(true)
+    } finally {
+      act(() => { root.unmount() })
+      container.remove()
+    }
+  })
+
   it('asks before sync would push a WIP commit, and pushes only after confirming', async () => {
     vi.spyOn(api, 'gitFetch').mockResolvedValue({ ok: true })
     vi.spyOn(api, 'gitPush').mockResolvedValue({ ok: true })

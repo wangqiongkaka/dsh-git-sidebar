@@ -230,6 +230,11 @@ export function buildApi(ctx: Context, readLimit: number): Record<string, (paylo
       await git.wipCommit(cwd)
       return { ok: true }
     },
+    'git.reset-to-upstream': async (payload) => {
+      const { cwd } = cwdOf(payload)
+      await git.resetToUpstream(cwd)
+      return { ok: true }
+    },
     'git.wip-undo': async (payload) => {
       const { cwd } = cwdOf(payload)
       await git.wipUndo(cwd)

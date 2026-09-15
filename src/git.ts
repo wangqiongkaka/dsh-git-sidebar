@@ -307,6 +307,20 @@ export async function wipUndo(cwd: string): Promise<void> {
   await runGit(cwd, ['reset', '-q', 'HEAD~1'])
 }
 
+/**
+ * Move the branch back to its upstream (`git reset @{upstream}`, mixed): every
+ * unpushed commit is unwound into the working tree, no file content is lost.
+ * Refuses when the branch is behind so that fetched remote commits can never be
+ * pulled in through a reset. Needs a configured upstream.
+ */
+export async function resetToUpstream(cwd: string): Promise<void> {
+  const counts = await runGit(cwd, ['rev-list', '--left-right', '--count', '@{upstream}...HEAD'])
+  const [behind = 0, ahead = 0] = counts.trim().split(/\s+/).map(Number)
+  if (behind > 0) throw new GitCommandError('branch is behind its upstream; fetch and merge first', 'git-error', 'reset-to-upstream')
+  if (ahead === 0) return
+  await runGit(cwd, ['reset', '-q', '@{upstream}'])
+}
+
 /** Local branch names by latest commit time (newest first). */
 export async function branches(cwd: string): Promise<{ current: string; names: string[] }> {
   const [current, raw] = await Promise.all([

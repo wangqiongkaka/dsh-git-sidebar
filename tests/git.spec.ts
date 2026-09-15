@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
 import { parseUnifiedDiff } from '../src/client/DiffView.tsx'
 import { defaultWorktreeDraft } from '../src/client/GitView.tsx'
-import { createTag, deleteTag, discardAll, parseLogLines, parsePorcelainZ, stash, stashList, stashPop, status, tags, wipCommit, wipUndo } from '../src/git.ts'
+import { createTag, deleteTag, discardAll, parseLogLines, parsePorcelainZ, resetToUpstream, stash, stashList, stashPop, status, tags, wipCommit, wipUndo } from '../src/git.ts'
 
 describe('git worktree defaults', () => {
   it('creates a new branch draft based on the current branch', () => {
@@ -360,6 +360,20 @@ describe('WIP commit', () => {
         gitRun(dir, ['push', '-q', '-u', 'origin', 'main'])
         await expect(wipUndo(dir)).rejects.toThrow('already pushed')
         expect(gitRun(dir, ['log', '-1', '--format=%s']).trim()).toBe('WIP')
+
+        // Reset to remote unwinds every unpushed commit (here: two) into the working tree.
+        writeFileSync(join(dir, 'a.txt'), 'local one\n')
+        gitRun(dir, ['commit', '-q', '-am', 'local one'])
+        writeFileSync(join(dir, 'b.txt'), 'local two\n')
+        gitRun(dir, ['add', '-A'])
+        gitRun(dir, ['commit', '-q', '-m', 'local two'])
+        await resetToUpstream(dir)
+        expect(gitRun(dir, ['log', '-1', '--format=%s']).trim()).toBe('WIP')
+        expect((await status(dir)).entries).toEqual([
+          { path: 'a.txt', xy: ' M' },
+          { path: 'b.txt', xy: '??' },
+        ])
+        expect(readFileSync(join(dir, 'b.txt'), 'utf8')).toBe('local two\n')
       } finally {
         rmSync(remote, { recursive: true, force: true })
       }

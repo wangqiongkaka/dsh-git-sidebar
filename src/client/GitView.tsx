@@ -800,6 +800,7 @@ export function GitView(props: {
             { id: 'merge', label: t('mergeBranchMenu'), disabled: branchNames.every(name => name === status?.branch) },
             { id: 'rebase', label: t('rebaseBranchMenu'), disabled: branchNames.every(name => name === status?.branch) },
             { id: 'worktree', label: t('worktreesMenu') },
+            { id: 'reset-to-remote', label: t('resetToRemoteMenu'), disabled: (status?.ahead ?? 0) === 0 || (status?.behind ?? 0) > 0 },
             { type: 'separator', id: 'branch-separator' },
             { type: 'label', id: 'label-worktree', text: t('groupWorkingTree') },
             { id: 'stage-all', label: allStaged ? t('unstageAll') : t('stageAll'), disabled: entries.length === 0 },
@@ -838,6 +839,14 @@ export function GitView(props: {
             }
             if (id === 'merge') setMergeSource(branch)
             if (id === 'rebase') setRebaseTarget(branch)
+            if (id === 'reset-to-remote') {
+              runConfirmed({
+                title: t('resetToRemoteTitle'),
+                description: t('resetToRemoteDesc', { count: status?.ahead ?? 0 }),
+                confirmLabel: t('resetToRemoteConfirm'),
+                onConfirm: () => api.gitResetToUpstream(scope),
+              })
+            }
             if (id === 'worktree') {
               const draft = defaultWorktreeDraft(status?.branch ?? '', worktreePathPrefix)
               setWorktreeError(null)
