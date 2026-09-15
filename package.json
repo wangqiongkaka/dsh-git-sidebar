@@ -1,6 +1,6 @@
 {
   "name": "dsh-git-sidebar",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Git source control and diff tabs for the built-in DSH right sidebar",
   "type": "module",
   "license": "MIT",

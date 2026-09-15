@@ -64,6 +64,7 @@ it('keeps failures explicit and rejects cross-site requests and option injection
   expect((await call('git.commit', { message: 'nothing staged' })).body.ok).toBe(false)
   expect((await call('git.wip-undo')).body.ok).toBe(false)
   expect((await call('git.reset-to-upstream')).body.ok).toBe(false)
+  expect((await call('git.fast-forward')).body.ok).toBe(false)
   expect(git('log', '-1', '--format=%s')).toBe('standalone')
   expect((await call('toString')).status).toBe(404)
   const response = await fetch(`${url}/git-sidebar/api/git.status`, { method: 'POST', headers: { origin: 'https://example.invalid' }, body: '{}' })

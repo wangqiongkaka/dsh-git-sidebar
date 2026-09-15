@@ -18,7 +18,7 @@ DSH 右侧边栏的 Git 源代码管理插件。React 18 + TypeScript，Cordis �
 
 ```sh
 pnpm typecheck
-pnpm test          # 38 项
+pnpm test          # 40 项
 pnpm build         # 产出 lib/，pack 前必须执行
 pnpm pack          # 产出 dsh-git-sidebar-<version>.tgz
 ```

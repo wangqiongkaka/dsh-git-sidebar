@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
 import { parseUnifiedDiff } from '../src/client/DiffView.tsx'
 import { defaultWorktreeDraft } from '../src/client/GitView.tsx'
-import { createTag, deleteTag, discardAll, parseLogLines, parsePorcelainZ, resetToUpstream, stash, stashList, stashPop, status, tags, wipCommit, wipUndo } from '../src/git.ts'
+import { createTag, deleteTag, discardAll, fastForward, parseLogLines, parsePorcelainZ, rebase, resetToUpstream, stash, stashList, stashPop, status, tags, wipCommit, wipUndo } from '../src/git.ts'
 
 describe('git worktree defaults', () => {
   it('creates a new branch draft based on the current branch', () => {
@@ -374,6 +374,28 @@ describe('WIP commit', () => {
           { path: 'b.txt', xy: '??' },
         ])
         expect(readFileSync(join(dir, 'b.txt'), 'utf8')).toBe('local two\n')
+
+        // Fast-forward pulls a remote-only commit even with a dirty working tree.
+        const clone = mkdtempSync(join(tmpdir(), 'dsh-sidebar-wip-clone-'))
+        try {
+          gitRun(clone, ['clone', '-q', remote, '.'])
+          writeFileSync(join(clone, 'c.txt'), 'from clone\n')
+          gitRun(clone, ['add', '-A'])
+          gitRun(clone, ['commit', '-q', '-m', 'remote only'])
+          gitRun(clone, ['push', '-q', 'origin', 'main'])
+        } finally {
+          rmSync(clone, { recursive: true, force: true })
+        }
+        gitRun(dir, ['fetch', '-q'])
+        await fastForward(dir)
+        expect(gitRun(dir, ['log', '-1', '--format=%s']).trim()).toBe('remote only')
+        expect(readFileSync(join(dir, 'a.txt'), 'utf8')).toBe('local one\n')
+
+        // Rebase auto-stashes the dirty working tree and restores it afterwards.
+        gitRun(dir, ['branch', 'side', 'HEAD~1'])
+        await rebase(dir, 'side')
+        expect(readFileSync(join(dir, 'a.txt'), 'utf8')).toBe('local one\n')
+        expect((await status(dir)).entries).toContainEqual({ path: 'a.txt', xy: ' M' })
       } finally {
         rmSync(remote, { recursive: true, force: true })
       }

@@ -148,6 +148,9 @@ export const api = {
   gitWipCommit: (scope: SessionScope) =>
     call<{ ok: true }>('git.wip-commit', scopePayload(scope, {})),
   /** Reset the WIP commit at HEAD back into the working tree (rejected when HEAD is not a WIP commit). */
+  /** Fast-forward the current branch to its upstream (only when there are no local commits). */
+  gitFastForward: (scope: SessionScope) =>
+    call<{ ok: true }>('git.fast-forward', scopePayload(scope, {})),
   /** Unwind every unpushed commit into the working tree (`git reset @{upstream}`). */
   gitResetToUpstream: (scope: SessionScope) =>
     call<{ ok: true }>('git.reset-to-upstream', scopePayload(scope, {})),

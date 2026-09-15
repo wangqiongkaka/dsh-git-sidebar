@@ -362,7 +362,14 @@ export async function merge(cwd: string, branch: string): Promise<void> {
 
 /** Replay the current branch's commits on top of an existing branch. */
 export async function rebase(cwd: string, branch: string): Promise<void> {
-  await runGit(cwd, ['rebase', branch])
+  // --autostash: a dirty working tree no longer blocks the rebase; the changes
+  // are stashed first and restored afterwards (or once the rebase concludes).
+  await runGit(cwd, ['rebase', '--autostash', branch])
+}
+
+/** Fast-forward the branch to its upstream (`merge --ff-only`); a dirty working tree is fine as long as it does not touch the incoming files. */
+export async function fastForward(cwd: string): Promise<void> {
+  await runGit(cwd, ['merge', '--ff-only', '@{upstream}'])
 }
 
 /** Linked checkouts for this repository, with the caller's checkout marked. */

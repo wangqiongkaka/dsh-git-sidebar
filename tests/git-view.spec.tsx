@@ -317,14 +317,64 @@ describe('GitView stash', () => {
     const { container, root } = renderGitView()
     try {
       await flush()
-      act(() => { buttons(['Sync', '同步'])[0]!.click() })
+      await act(async () => { buttons(['Sync', '同步'])[0]!.click(); await Promise.resolve() })
+      await flush()
+      expect(api.gitFetch).toHaveBeenCalledTimes(1)
       expect(api.gitPush).not.toHaveBeenCalled()
       expect(document.body.textContent).toMatch(/Push WIP commit|推送 WIP 提交/)
 
       await act(async () => { buttons(['Push anyway', '仍然推送'])[0]!.click(); await Promise.resolve() })
       await flush()
-      expect(api.gitFetch).toHaveBeenCalledTimes(1)
       expect(api.gitPush).toHaveBeenCalledWith({ sessionId: 'session-1', cwd: '/repo' })
+    } finally {
+      act(() => { root.unmount() })
+      container.remove()
+    }
+  })
+
+  it('fast-forwards without asking when sync finds the remote ahead and nothing local to push', async () => {
+    vi.spyOn(api, 'gitFetch').mockResolvedValue({ ok: true })
+    vi.spyOn(api, 'gitPush').mockResolvedValue({ ok: true })
+    vi.spyOn(api, 'gitRebase').mockResolvedValue({ ok: true })
+    vi.spyOn(api, 'gitFastForward').mockResolvedValue({ ok: true })
+    vi.mocked(api.gitStatus).mockResolvedValueOnce(dirtyStatus).mockResolvedValue({ ...dirtyStatus, behind: 2 })
+    const buttons = (labels: string[]): HTMLButtonElement[] => [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .filter(button => labels.some(label => (button.textContent?.trim() ?? '').startsWith(label)))
+    const { container, root } = renderGitView()
+    try {
+      await flush()
+      await act(async () => { buttons(['Sync', '同步'])[0]!.click(); await Promise.resolve() })
+      await flush()
+      expect(api.gitFastForward).toHaveBeenCalledWith({ sessionId: 'session-1', cwd: '/repo' })
+      expect(api.gitRebase).not.toHaveBeenCalled()
+      expect(api.gitPush).not.toHaveBeenCalled()
+      expect(document.body.textContent).not.toMatch(/Remote has new commits|远端有新提交/)
+    } finally {
+      act(() => { root.unmount() })
+      container.remove()
+    }
+  })
+
+  it('offers to rebase onto the upstream when sync finds the remote ahead, then pushes', async () => {
+    vi.spyOn(api, 'gitFetch').mockResolvedValue({ ok: true })
+    vi.spyOn(api, 'gitPush').mockResolvedValue({ ok: true })
+    vi.spyOn(api, 'gitRebase').mockResolvedValue({ ok: true })
+    // Before the fetch the panel sees nothing behind; the fetch reveals 3 remote commits.
+    vi.mocked(api.gitStatus).mockResolvedValueOnce({ ...dirtyStatus, ahead: 1 }).mockResolvedValue({ ...dirtyStatus, ahead: 1, behind: 3 })
+    const buttons = (labels: string[]): HTMLButtonElement[] => [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .filter(button => labels.some(label => (button.textContent?.trim() ?? '').startsWith(label)))
+    const { container, root } = renderGitView()
+    try {
+      await flush()
+      await act(async () => { buttons(['Sync', '同步'])[0]!.click(); await Promise.resolve() })
+      await flush()
+      expect(api.gitPush).not.toHaveBeenCalled()
+      expect(document.body.textContent).toMatch(/3 commit|3 个提交/)
+
+      await act(async () => { buttons(['Rebase and push', '变基并推送'])[0]!.click(); await Promise.resolve() })
+      await flush()
+      expect(api.gitRebase).toHaveBeenCalledWith({ sessionId: 'session-1', cwd: '/repo' }, '@{upstream}')
+      expect(api.gitPush).toHaveBeenCalledTimes(1)
     } finally {
       act(() => { root.unmount() })
       container.remove()

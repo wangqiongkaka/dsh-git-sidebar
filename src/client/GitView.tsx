@@ -524,15 +524,36 @@ export function GitView(props: {
   }
 
   /** 'sync' = fetch, then push when the branch is ahead (the header button). */
+  /**
+   * Sync = fetch, then look at the fresh ahead/behind: behind means the push
+   * would be rejected, so ask to rebase onto the upstream first; otherwise push
+   * when ahead (a WIP HEAD asks first, see `syncGuarded`).
+   */
   const syncRemote = async (action: 'sync' | 'fetch-all' | 'push'): Promise<void> => {
     if (busy) return
     setBusy(true)
     setCommitError(null)
     try {
-      if (action === 'push') await api.gitPush(scope)
-      else await api.gitFetch(scope, action === 'fetch-all')
-      if (action === 'sync' && (status?.ahead ?? 0) > 0) await api.gitPush(scope)
+      if (action === 'push') { await api.gitPush(scope); await refresh(); return }
+      await api.gitFetch(scope, action === 'fetch-all')
+      if (action !== 'sync') { await refresh(); return }
+      const fresh = await api.gitStatus(scope)
+      if (fresh.behind > 0 && fresh.ahead === 0) { await api.gitFastForward(scope); await refresh(); return }
       await refresh()
+      if (fresh.behind > 0) {
+        setBusy(false)
+        runConfirmed({
+          title: t('syncRebaseTitle'),
+          description: t('syncRebaseDesc', { count: fresh.behind }) + (headIsWip ? `\n${t('wipPushDesc')}` : ''),
+          confirmLabel: t('syncRebaseConfirm'),
+          onConfirm: async () => {
+            await api.gitRebase(scope, '@{upstream}')
+            if (fresh.ahead > 0) await api.gitPush(scope)
+          },
+        })
+        return
+      }
+      if (fresh.ahead > 0) { setBusy(false); pushGuarded(); return }
     } catch (reason) {
       const label = action === 'sync' ? t('syncError') : action === 'push' ? t('pushError') : t('fetchError')
       setCommitError(`${label}: ${reason instanceof Error ? reason.message : String(reason)}`)
@@ -689,18 +710,14 @@ export function GitView(props: {
   // `%D` lists HEAD first, so the HEAD row is the one whose refs start with "HEAD".
   const headIsWip = logEntries.find(entry => /^HEAD\b/.test(entry.refs))?.subject === 'WIP'
 
-  /** Sync / push, but ask first when that would publish a WIP commit (it cannot be undone from the panel afterwards). */
-  const syncGuarded = (action: 'sync' | 'fetch-all' | 'push'): void => {
-    const pushes = action === 'push' || (action === 'sync' && (status?.ahead ?? 0) > 0)
-    if (!pushes || !headIsWip) { void syncRemote(action); return }
+  /** Push, but ask first when that would publish a WIP commit (it cannot be undone from the panel afterwards). */
+  const pushGuarded = (): void => {
+    if (!headIsWip) { void syncRemote('push'); return }
     runConfirmed({
       title: t('wipPushTitle'),
       description: t('wipPushDesc'),
       confirmLabel: t('wipPushConfirm'),
-      onConfirm: async () => {
-        if (action === 'sync') await api.gitFetch(scope)
-        await api.gitPush(scope)
-      },
+      onConfirm: () => api.gitPush(scope),
     })
   }
   const discardableCount = new Set(entries.filter(entry => !isUntracked(entry)).map(entry => entry.path)).size
@@ -781,7 +798,7 @@ export function GitView(props: {
           className={css.gitSyncButton}
           title={t('syncTitle')}
           disabled={busy || (status !== null && !status.isRepo) || status?.branch === 'HEAD'}
-          onClick={() => { syncGuarded('sync') }}
+          onClick={() => { void syncRemote('sync') }}
         >
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M5 13V3M2 6l3-3 3 3M11 3v10M8 10l3 3 3-3" /></svg>
           <span>{t('sync')}</span>
@@ -815,7 +832,8 @@ export function GitView(props: {
           onSelect={(id) => {
             const branch = branchNames.find(name => name !== status?.branch) ?? null
             setBranchMenuOpen(false)
-            if (id === 'fetch-all' || id === 'push') syncGuarded(id)
+            if (id === 'fetch-all') void syncRemote('fetch-all')
+            if (id === 'push') pushGuarded()
             if (id === 'refresh') void refresh()
             if (id === 'stage-all') void stageAll(allStaged)
             if (id === 'stash-save') void runStashAction(() => api.gitStash(scope))
