@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode, type UIEvent } from 'react'
 import {
   Button, IconBranchOutline16, IconChevronRightOutline14, IconCodeOutline16, IconCopyOutline16, IconEllipsisOutline16, IconRefreshOutline16,
-  IconTrashOutline16, Input, Menu, Modal, writeClipboard,
+  IconSendOutline14, IconTrashOutline16, Input, Menu, Modal, writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { GitLogEntry, GitOperation, GitStashEntry, GitStatusEntry, GitStatusResult, GitTagEntry, GitWorktree, SessionScope } from './api.ts'
 import { api } from './api.ts'
@@ -346,6 +346,42 @@ export function GitView(props: {
       if (memory.scroll[key] !== undefined) box.scrollTop = memory.scroll[key]
     }
   }, [loading, memory])
+
+  /**
+   * The chat composer card's distance from the bottom edge, mirrored under the
+   * commit card so both cards end on one line. The card moves when the chat's
+   * stats row appears or the font size changes, so it is measured, not fixed;
+   * null (no visible composer beside this pane) keeps the stylesheet's 8px.
+   */
+  const [commitInset, setCommitInset] = useState<number | null>(null)
+  useEffect(() => {
+    const root = rootRef.current
+    if (root === null) return
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(() => { measure() })
+    let watched: Element | null = null
+    const measure = (): void => {
+      const card = [...document.querySelectorAll<HTMLElement>('[data-composer-card]')].find(node => node.getClientRects().length > 0)
+      const seat = card?.closest('[data-composer-seat]') ?? card ?? null
+      if (seat !== watched) {
+        if (watched !== null) observer?.unobserve(watched)
+        if (seat !== null) observer?.observe(seat)
+        watched = seat
+      }
+      const inset = card === undefined ? null : Math.round(root.getBoundingClientRect().bottom - card.getBoundingClientRect().bottom)
+      // Outside 0–160 the composer is not beside this pane (split pane, fullscreen): keep the default.
+      setCommitInset(inset !== null && inset >= 0 && inset <= 160 ? inset : null)
+    }
+    observer?.observe(root)
+    window.addEventListener('resize', measure)
+    // The composer can mount or be swapped after this view (session switch); pick the new one up.
+    const timer = window.setInterval(measure, 2000)
+    measure()
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener('resize', measure)
+      window.clearInterval(timer)
+    }
+  }, [])
 
   // Keep the panel current without a file watcher: poll while the tab is
   // visible, and re-read when the window regains focus. Skipped mid-operation
@@ -1017,7 +1053,9 @@ export function GitView(props: {
                     <span className={css.gitCleanMeta}>{status.ahead > 0 ? t('unpushedReminder', { count: status.ahead }) : t('synced')}</span>
                   </div>
                 )}
-                {changeView === 'list' ? entries.map(renderEntry) : renderDirectoryContents(changeTree(entries))}
+                {changeView === 'list'
+                  ? entries.map(renderEntry)
+                  : <div className={css.gitTree}>{renderDirectoryContents(changeTree(entries))}</div>}
               </div>
             )}
           </div>
@@ -1151,33 +1189,39 @@ export function GitView(props: {
             )}
           </div>
 
-          <div className={css.gitCommit}>
-            <textarea
-              className={css.gitCommitInput}
-              rows={2}
-              placeholder={t('commitPlaceholder')}
-              value={commitMsg}
-              disabled={busy}
-              onChange={(event) => { setCommitMsg(event.target.value); setCommitError(null) }}
-              onKeyDown={(event) => {
-                if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') void commit()
-              }}
-            />
-            <div className={css.gitCommitFooter}>
-              <span className={css.gitCommitHint}>
-                {stagedEntries.length > 0 ? t('commitHint', { count: stagedEntries.length }) : t('commitHintEmpty')}
-              </span>
-              <button
-                type="button"
-                className={css.gitCommitButton}
-                disabled={busy || commitMsg.trim() === '' || stagedEntries.length === 0}
-                onClick={() => { void commit() }}
-              >
-                {t('commit')}
-              </button>
+          {/* Same card as the chat composer: text on top, hint and a round send button inside the card. */}
+          <div className={css.gitCommit} style={commitInset === null ? undefined : { paddingBottom: commitInset }}>
+            {commitError !== null && <div className={css.gitCommitError}>{commitError}</div>}
+            <div className={css.gitCommitCard}>
+              <textarea
+                className={css.gitCommitInput}
+                rows={1}
+                aria-label={t('commitPlaceholder')}
+                placeholder={t('commitPlaceholder')}
+                value={commitMsg}
+                disabled={busy}
+                onChange={(event) => { setCommitMsg(event.target.value); setCommitError(null) }}
+                onKeyDown={(event) => {
+                  if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') void commit()
+                }}
+              />
+              <div className={css.gitCommitFooter}>
+                <span className={css.gitCommitHint}>
+                  {stagedEntries.length > 0 ? t('commitHint', { count: stagedEntries.length }) : t('commitHintEmpty')}
+                </span>
+                <button
+                  type="button"
+                  className={css.gitCommitButton}
+                  aria-label={t('commit')}
+                  title={t('commit')}
+                  disabled={busy || commitMsg.trim() === '' || stagedEntries.length === 0}
+                  onClick={() => { void commit() }}
+                >
+                  <IconSendOutline14 size={16} />
+                </button>
+              </div>
             </div>
           </div>
-          {commitError !== null && <div className={css.gitError}>{commitError}</div>}
 
           {/*
             The one shared file-row context menu, positioned at the right-click

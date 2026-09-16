@@ -177,6 +177,56 @@ describe('GitView change groups', () => {
     }
   })
 
+  it('pads the commit card so it ends on the same line as the chat composer card', async () => {
+    const seat = document.createElement('div')
+    seat.setAttribute('data-composer-seat', '')
+    const card = document.createElement('div')
+    card.setAttribute('data-composer-card', '')
+    seat.append(card)
+    document.body.append(seat)
+    const rect = (bottom: number) => ({ bottom, top: bottom - 98, left: 0, right: 100, width: 100, height: 98, x: 0, y: bottom - 98, toJSON: () => ({}) }) as DOMRect
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      return this === card ? rect(670) : rect(700)
+    })
+    vi.spyOn(Element.prototype, 'getClientRects').mockImplementation(function (this: Element) {
+      return (this === card ? [rect(670)] : []) as unknown as DOMRectList
+    })
+    const { container, root } = renderGitView()
+    try {
+      await flush()
+      const commitBox = container.querySelector('textarea')!.parentElement!.parentElement!
+      expect(commitBox.style.paddingBottom).toBe('30px')
+      seat.remove()
+      act(() => { window.dispatchEvent(new Event('resize')) })
+      expect(commitBox.style.paddingBottom).toBe('')
+    } finally {
+      act(() => { root.unmount() })
+      container.remove()
+    }
+  })
+
+  it('commits from the send button inside the commit card', async () => {
+    const commit = vi.spyOn(api, 'gitCommit').mockResolvedValue({ ok: true })
+    const { container, root } = renderGitView()
+    try {
+      await flush()
+      const button = [...container.querySelectorAll<HTMLButtonElement>('button')]
+        .find(node => node.getAttribute('aria-label') === 'Commit' || node.getAttribute('aria-label') === '提交')!
+      expect(button.disabled).toBe(true)
+      const input = container.querySelector('textarea')!
+      act(() => {
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(input, 'feat: card')
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+      expect(button.disabled).toBe(false)
+      await act(async () => { button.click() })
+      expect(commit).toHaveBeenCalledWith({ sessionId: 'session-1', cwd: '/repo' }, 'feat: card')
+    } finally {
+      act(() => { root.unmount() })
+      container.remove()
+    }
+  })
+
   it('renders one changes list with stage checkboxes; stash and tag start folded', async () => {
     const { container, root } = renderGitView()
     try {

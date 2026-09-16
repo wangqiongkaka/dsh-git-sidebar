@@ -25,6 +25,9 @@
 
 .git {
   flex: 1;
+  /* The host pane body is a plain block scroller, so fill it explicitly; the commit card then sits at the bottom. */
+  height: 100%;
+  box-sizing: border-box;
   min-height: 0;
   min-width: 0;
   display: flex;
@@ -280,6 +283,11 @@
 
 .gitRow:hover {
   background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* The tree sits one step in, so folders and root files line up under the section title, not its chevron. */
+.gitTree {
+  padding-left: 16px;
 }
 
 .gitTreeGroup {
@@ -695,58 +703,94 @@
   margin-top: auto;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px 12px;
-  border-top: 1px solid var(--dsw-alias-border-l1);
+  gap: 6px;
+  /* Bottom 8px matches the chat composer card's clearance (InputBar .root), so both cards end on one line. */
+  padding: 8px 12px;
   background: var(--dsw-alias-bg-layer-1);
 }
 
+.gitCommitError {
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-state-error-primary);
+  white-space: pre-wrap;
+}
+
+/* The chat composer card (InputBar .card): input fill, soft elevation, 22px radius. */
+.gitCommitCard {
+  display: flex;
+  flex-direction: column;
+  /* Card metrics mirror InputBar: 8 top + 36 input + 12 gap + 42 button row = 98px, the chat card's height. */
+  gap: 12px;
+  padding-top: 8px;
+  border-radius: 22px;
+  background: var(--dsw-specific-input-major);
+  box-shadow: var(--dsw-elevation-soft);
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l2);
+}
+
 .gitCommitInput {
+  display: block;
   width: 100%;
   box-sizing: border-box;
-  resize: vertical;
-  min-height: 56px;
-  padding: 8px 10px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 6px;
-  background: var(--dsw-alias-bg-base);
+  min-height: 36px;
+  max-height: 160px;
+  field-sizing: content;
+  resize: none;
+  padding: 4px 8px 0 14px;
+  border: none;
+  outline: none;
+  background: transparent;
   color: var(--dsw-alias-label-primary);
-  font: var(--dsw-font-xxs-12);
-  font-size: 13px;
-  line-height: 20px;
+  font: var(--dsw-font-s-14);
+  line-height: 24px;
+  caret-color: var(--dsw-alias-state-business-primary);
+}
+
+.gitCommitInput::placeholder {
+  color: var(--dsw-alias-label-caption);
 }
 
 .gitCommitFooter {
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 2px 8px 6px 14px;
 }
 
 .gitCommitHint {
   flex: 1;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font: var(--dsw-font-xxxs-11);
   color: var(--dsw-alias-label-tertiary);
 }
 
+/* The chat send button (InputBar .primary): 34px info-blue circle, white glyph in both themes. */
 .gitCommitButton {
+  display: grid;
+  place-items: center;
   flex: none;
-  height: 28px;
-  padding: 0 12px;
+  width: 34px;
+  height: 34px;
+  padding: 0;
   border: none;
-  border-radius: 6px;
-  background: var(--dsw-alias-button-primary-fill);
-  color: var(--dsw-alias-label-primary-inverted);
-  font: var(--dsw-font-xxs-strong-12);
+  border-radius: 999px;
+  background: var(--dsw-alias-button-info-fill);
+  color: var(--dsw-static-neutral-bluish-00);
   cursor: pointer;
+  transition: background-color 100ms ease;
+  /* InputBar .primary keeps the send circle 2px above the row's centre line. */
+  transform: translateY(-2px);
 }
 
 .gitCommitButton:hover:not(:disabled) {
-  background: var(--dsw-alias-button-primary-hover);
+  background: var(--dsw-alias-button-info-hover);
 }
 
 .gitCommitButton:disabled {
-  opacity: 0.45;
+  opacity: 0.4;
   cursor: default;
 }
 
