@@ -33,8 +33,8 @@
   display: flex;
   flex-direction: column;
   overflow-y: auto;
-
   overflow-x: hidden;
+  scrollbar-width: thin;
 }
 
 .gitHeader {
@@ -173,6 +173,8 @@
 .gitSectionBody {
   max-height: 160px;
   overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
   overscroll-behavior: contain;
 }
 
@@ -180,8 +182,17 @@
   max-height: min(320px, 40vh);
 }
 
+/* History takes whatever height is left above the commit card instead of leaving a gap. */
+.gitSectionGrow {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+}
+
 .gitSectionBodyHistory {
-  max-height: min(360px, 45vh);
+  flex: 1 1 auto;
+  min-height: 160px;
+  max-height: none;
 }
 
 /* The changes list, and rows inside the secondary group, draw no divider. */
@@ -861,7 +872,8 @@
 }
 
 .gitLogRef {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
   max-width: 96px;
   overflow: hidden;
   text-overflow: ellipsis;

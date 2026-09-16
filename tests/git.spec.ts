@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
 import { parseUnifiedDiff } from '../src/client/DiffView.tsx'
 import { defaultWorktreeDraft } from '../src/client/GitView.tsx'
-import { createTag, deleteTag, discardAll, fastForward, parseLogLines, parsePorcelainZ, rebase, resetToUpstream, stash, stashList, stashPop, status, tags, wipCommit, wipUndo } from '../src/git.ts'
+import { branches, createTag, deleteTag, discardAll, fastForward, parseLogLines, parsePorcelainZ, rebase, resetToUpstream, stash, stashList, stashPop, status, tags, wipCommit, wipUndo } from '../src/git.ts'
 
 describe('git worktree defaults', () => {
   it('creates a new branch draft based on the current branch', () => {
@@ -451,6 +451,26 @@ describe('tags', () => {
 
       await deleteTag(dir, 'v0.2.0')
       expect(await tags(dir)).toEqual([{ name: 'v0.1.0', subject: 'base commit' }])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps tag names usable when a branch has the same name', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-sidebar-tag-ambiguous-'))
+    try {
+      gitRun(dir, ['init', '-q'])
+      gitRun(dir, ['checkout', '-q', '-b', 'main'])
+      writeFileSync(join(dir, 'a.txt'), 'a\n')
+      gitRun(dir, ['add', '-A'])
+      gitRun(dir, ['commit', '-q', '-m', 'base commit'])
+      gitRun(dir, ['branch', '0.1.2'])
+      await createTag(dir, '0.1.2')
+
+      expect((await branches(dir)).names).toContain('0.1.2')
+      expect(await tags(dir)).toEqual([{ name: '0.1.2', subject: 'base commit' }])
+      await deleteTag(dir, (await tags(dir))[0]!.name)
+      expect(await tags(dir)).toEqual([])
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

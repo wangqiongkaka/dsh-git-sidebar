@@ -325,7 +325,7 @@ export async function resetToUpstream(cwd: string): Promise<void> {
 export async function branches(cwd: string): Promise<{ current: string; names: string[] }> {
   const [current, raw] = await Promise.all([
     currentBranch(cwd).catch(() => 'HEAD'),
-    runGit(cwd, ['for-each-ref', '--sort=-committerdate', '--format=%(refname:short)', 'refs/heads']),
+    runGit(cwd, ['for-each-ref', '--sort=-committerdate', '--format=%(refname:strip=2)', 'refs/heads']),
   ])
   const names = raw.split('\n').filter(line => line !== '')
   return { current, names: names.includes(current) ? names : [current, ...names] }
@@ -504,7 +504,7 @@ export async function cherryPick(cwd: string, hash: string): Promise<void> {
  */
 export async function tags(cwd: string): Promise<GitTagEntry[]> {
   const raw = await runGit(cwd, [
-    'for-each-ref', '--sort=-creatordate', '--format=%(refname:short)%1f%(contents:subject)', 'refs/tags',
+    'for-each-ref', '--sort=-creatordate', '--format=%(refname:strip=2)%1f%(contents:subject)', 'refs/tags',
   ])
   return raw.split('\n').filter(row => row !== '').map((row) => {
     const [name, subject] = row.split('\x1f')

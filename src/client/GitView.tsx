@@ -1120,7 +1120,7 @@ export function GitView(props: {
             )}
           </div>
 
-          <div className={`${css.gitSection} ${css.gitSectionFlat}`}>
+          <div className={`${css.gitSection} ${css.gitSectionFlat} ${css.gitSectionGrow}`}>
             <div className={css.gitSectionHeader}>
               <button type="button" className={css.gitSectionToggle} aria-expanded={expandedSections.history} aria-controls={`git-history-${viewId}`} onClick={() => { toggleSection('history') }}>
                 <IconChevronRightOutline14 className={expandedSections.history ? css.gitSectionChevronExpanded : css.gitSectionChevron} />
