@@ -4,7 +4,7 @@ import { createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
 import { api, type GitLogEntry, type GitStashEntry, type GitStatusResult, type GitTagEntry } from '../src/client/api.ts'
-import { GitView, resetViewMemory } from '../src/client/GitView.tsx'
+import { changeTree, GitView, listPathParts, resetViewMemory } from '../src/client/GitView.tsx'
 
 ;(globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -105,6 +105,78 @@ afterEach(() => {
 })
 
 describe('GitView change groups', () => {
+  it('splits a path into file name and directory, keeping an untracked folder whole', () => {
+    expect(listPathParts('components/video/EpisodeNativeAd.nvue')).toEqual({ name: 'EpisodeNativeAd.nvue', directory: 'components/video' })
+    expect(listPathParts('README.md')).toEqual({ name: 'README.md', directory: '' })
+    expect(listPathParts('newdir/')).toEqual({ name: 'newdir/', directory: '' })
+    expect(listPathParts('src/newdir/')).toEqual({ name: 'newdir/', directory: 'src' })
+  })
+
+  it('nests changed files by directory and compacts single-folder chains', () => {
+    const tree = changeTree([
+      { path: 'lib/deep/x/y.ts', xy: ' M' },
+      { path: 'newdir/', xy: '??' },
+      { path: 'README.md', xy: ' M' },
+      { path: 'src/a.ts', xy: ' M' },
+      { path: 'src/client/b.ts', xy: ' M' },
+    ])
+    expect(tree.files.map(entry => entry.path)).toEqual(['newdir/', 'README.md'])
+    expect(tree.directories.map(directory => [directory.name, directory.path])).toEqual([['lib/deep/x', 'lib/deep/x'], ['src', 'src']])
+    const src = tree.directories[1]!
+    expect(src.files.map(entry => entry.path)).toEqual(['src/a.ts'])
+    expect(src.directories.map(directory => [directory.name, directory.path])).toEqual([['client', 'src/client']])
+    expect(src.directories[0]!.files.map(entry => entry.path)).toEqual(['src/client/b.ts'])
+  })
+
+  it('switches between tree and list, folds folders, and remembers both across a remount', async () => {
+    vi.mocked(api.gitStatus).mockResolvedValue({
+      ...dirtyStatus,
+      entries: [{ path: 'src/a.ts', xy: ' M' }, { path: 'src/client/GitView.tsx', xy: ' M' }, { path: 'README.md', xy: ' M' }],
+    })
+    const fileButton = (container: HTMLElement, path: string) => container.querySelector<HTMLButtonElement>(`button[title="${path}"]`)
+    const folderToggle = (container: HTMLElement, path: string) => container.querySelector<HTMLButtonElement>(`[data-change-directory="${path}"] > button`)!
+    const first = renderGitView()
+    try {
+      await flush()
+      expect(folderToggle(first.container, 'src/client')).not.toBeNull()
+      expect(fileButton(first.container, 'src/client/GitView.tsx')?.textContent).not.toContain('src/client')
+      act(() => { folderToggle(first.container, 'src').click() })
+      expect(folderToggle(first.container, 'src').getAttribute('aria-expanded')).toBe('false')
+      expect(fileButton(first.container, 'src/a.ts')).toBeNull()
+      expect(fileButton(first.container, 'src/client/GitView.tsx')).toBeNull()
+      expect(fileButton(first.container, 'README.md')).not.toBeNull()
+    } finally {
+      act(() => { first.root.unmount() })
+      first.container.remove()
+    }
+
+    const second = renderGitView()
+    try {
+      await flush()
+      expect(folderToggle(second.container, 'src').getAttribute('aria-expanded')).toBe('false')
+      openMoreMenu()
+      const list = menuItem('View as list') ?? menuItem('以列表形式查看')
+      expect(list).toBeDefined()
+      act(() => { list!.click() })
+      expect(second.container.querySelector('[data-change-directory]')).toBeNull()
+      expect(fileButton(second.container, 'src/client/GitView.tsx')?.textContent).toContain('src/client')
+    } finally {
+      act(() => { second.root.unmount() })
+      second.container.remove()
+    }
+
+    const third = renderGitView()
+    try {
+      await flush()
+      expect(third.container.querySelector('[data-change-directory]')).toBeNull()
+      openMoreMenu()
+      expect(menuItem('View as tree') ?? menuItem('以树形式查看')).toBeDefined()
+    } finally {
+      act(() => { third.root.unmount() })
+      third.container.remove()
+    }
+  })
+
   it('renders one changes list with stage checkboxes; stash and tag start folded', async () => {
     const { container, root } = renderGitView()
     try {

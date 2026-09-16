@@ -39,6 +39,55 @@ function badgeTone(letter: string): string | undefined {
   return undefined
 }
 
+/**
+ * Split Git's slash-delimited path for the changes list. An untracked
+ * directory arrives as `dir/` and keeps its trailing slash in the name.
+ */
+export function listPathParts(path: string): { name: string; directory: string } {
+  const trailing = path.endsWith('/') ? '/' : ''
+  const bare = trailing === '' ? path : path.slice(0, -1)
+  const slash = bare.lastIndexOf('/')
+  return slash === -1
+    ? { name: path, directory: '' }
+    : { name: bare.slice(slash + 1) + trailing, directory: bare.slice(0, slash) }
+}
+
+/** A tree-view folder; `name` is compacted (`a/b`) when a folder only holds one sub-folder. */
+export interface ChangeDirectory { path: string; name: string; directories: ChangeDirectory[]; files: GitStatusEntry[] }
+
+/** Nest changed files by directory for the tree view; the returned root has path ''. */
+export function changeTree(entries: GitStatusEntry[]): ChangeDirectory {
+  const root: ChangeDirectory = { path: '', name: '', directories: [], files: [] }
+  for (const entry of entries) {
+    const { directory } = listPathParts(entry.path)
+    let node = root
+    if (directory !== '') {
+      for (const segment of directory.split('/')) {
+        const path = node.path === '' ? segment : `${node.path}/${segment}`
+        let child = node.directories.find(candidate => candidate.path === path)
+        if (child === undefined) {
+          child = { path, name: segment, directories: [], files: [] }
+          node.directories.push(child)
+        }
+        node = child
+      }
+    }
+    node.files.push(entry)
+  }
+  const compact = (node: ChangeDirectory): ChangeDirectory => {
+    let current = node
+    while (current.files.length === 0 && current.directories.length === 1) {
+      const only = current.directories[0]!
+      current = { ...only, name: `${current.name}/${only.name}` }
+    }
+    return {
+      ...current,
+      directories: current.directories.map(compact).sort((left, right) => left.name.localeCompare(right.name)),
+    }
+  }
+  return { ...root, directories: root.directories.map(compact).sort((left, right) => left.name.localeCompare(right.name)) }
+}
+
 /** Whether the entry carries STAGED (index) changes — the X letter is set. */
 function isStagedEntry(entry: GitStatusEntry): boolean {
   const index = entry.xy[0]
@@ -128,14 +177,14 @@ const DEFAULT_SECTIONS: SectionState = { changes: true, stash: false, tag: false
  * when another tab is shown): folding, how much history was paged in, and
  * the scroll offset of every scroll box, keyed by session.
  */
-interface ViewMemory { expanded: SectionState; logCount: number; scroll: Record<string, number> }
+interface ViewMemory { expanded: SectionState; changeView: 'tree' | 'list'; collapsedDirectories: Set<string>; logCount: number; scroll: Record<string, number> }
 const viewMemory = new Map<string, ViewMemory>()
 /** Forget every remembered view (tests isolate cases with it). */
 export function resetViewMemory(): void { viewMemory.clear() }
 function memoryFor(sessionId: string): ViewMemory {
   let memory = viewMemory.get(sessionId)
   if (memory === undefined) {
-    memory = { expanded: { ...DEFAULT_SECTIONS }, logCount: 0, scroll: {} }
+    memory = { expanded: { ...DEFAULT_SECTIONS }, changeView: 'tree', collapsedDirectories: new Set(), logCount: 0, scroll: {} }
     viewMemory.set(sessionId, memory)
   }
   return memory
@@ -228,7 +277,11 @@ export function GitView(props: {
   const [confirm, setConfirm] = useState<ConfirmState | null>(null)
   const memory = memoryFor(scope.sessionId)
   const [expandedSections, setExpandedSections] = useState<SectionState>(() => ({ ...memory.expanded }))
+  const [changeView, setChangeView] = useState<'tree' | 'list'>(() => memory.changeView)
+  const [collapsedDirectories, setCollapsedDirectories] = useState<Set<string>>(() => memory.collapsedDirectories)
   useEffect(() => { memory.expanded = expandedSections }, [memory, expandedSections])
+  useEffect(() => { memory.changeView = changeView }, [memory, changeView])
+  useEffect(() => { memory.collapsedDirectories = collapsedDirectories }, [memory, collapsedDirectories])
   /** Scroll boxes report their offset here; the first render after a remount puts it back. */
   const rootRef = useRef<HTMLDivElement>(null)
   const scrollProps = (key: string) => ({
@@ -730,6 +783,7 @@ export function GitView(props: {
   const renderEntry = (entry: GitStatusEntry): ReactNode => {
     const staged = isStagedEntry(entry) && !isUnstagedEntry(entry)
     const partial = isStagedEntry(entry) && isUnstagedEntry(entry)
+    const path = listPathParts(entry.path)
     return (
       <div key={entry.path} className={css.gitRow}>
         <input
@@ -750,7 +804,8 @@ export function GitView(props: {
           onContextMenu={(event) => { openFileMenu(event, entry, staged) }}
         >
           <span className={`${css.gitBadge} ${badgeTone(badgeOf(entry)) ?? ''}`}>{badgeOf(entry)}</span>
-          <span className={css.gitName}>{entry.path}</span>
+          <span className={css.gitFileName}>{path.name}</span>
+          {changeView === 'list' && path.directory !== '' && <span className={css.gitFilePath}>{path.directory}</span>}
         </button>
         {(isUntracked(entry) || staged) && <span className={css.gitRowHint}>{isUntracked(entry) ? t('untracked') : t('staged')}</span>}
         <span className={css.gitRowActions}>
@@ -781,6 +836,38 @@ export function GitView(props: {
     )
   }
 
+  /** Sub-folders first, then the folder's own files; a folder row folds its whole subtree. */
+  const renderDirectoryContents = (node: ChangeDirectory): ReactNode => (
+    <>
+      {node.directories.map(directory => {
+        const collapsed = collapsedDirectories.has(directory.path)
+        return (
+          <div key={directory.path} data-change-directory={directory.path}>
+            <button
+              type="button"
+              className={css.gitTreeGroup}
+              title={directory.path}
+              aria-expanded={!collapsed}
+              onClick={() => {
+                setCollapsedDirectories(current => {
+                  const next = new Set(current)
+                  if (next.has(directory.path)) next.delete(directory.path)
+                  else next.add(directory.path)
+                  return next
+                })
+              }}
+            >
+              <IconChevronRightOutline14 className={collapsed ? css.gitSectionChevron : css.gitSectionChevronExpanded} />
+              <span className={css.gitTreeGroupName}>{directory.name}</span>
+            </button>
+            {!collapsed && <div className={css.gitTreeChildren}>{renderDirectoryContents(directory)}</div>}
+          </div>
+        )
+      })}
+      {node.files.map(renderEntry)}
+    </>
+  )
+
   return (
     <div className={css.git} ref={rootRef} {...scrollProps('root')}>
       <div className={css.gitHeader}>
@@ -809,6 +896,9 @@ export function GitView(props: {
           open={branchMenuOpen}
           onClose={() => { setBranchMenuOpen(false) }}
           items={[
+            { type: 'label', id: 'label-view', text: t('groupView') },
+            { id: 'change-view', label: t(changeView === 'tree' ? 'viewAsList' : 'viewAsTree') },
+            { type: 'separator', id: 'view-separator' },
             { type: 'label', id: 'label-remote', text: t('groupRemote') },
             { id: 'fetch-all', label: t('fetchAll') },
             { id: 'push', label: t('pushBranch'), disabled: status?.branch === 'HEAD' },
@@ -832,6 +922,7 @@ export function GitView(props: {
           onSelect={(id) => {
             const branch = branchNames.find(name => name !== status?.branch) ?? null
             setBranchMenuOpen(false)
+            if (id === 'change-view') setChangeView(current => current === 'tree' ? 'list' : 'tree')
             if (id === 'fetch-all') void syncRemote('fetch-all')
             if (id === 'push') pushGuarded()
             if (id === 'refresh') void refresh()
@@ -926,7 +1017,7 @@ export function GitView(props: {
                     <span className={css.gitCleanMeta}>{status.ahead > 0 ? t('unpushedReminder', { count: status.ahead }) : t('synced')}</span>
                   </div>
                 )}
-                {entries.map(renderEntry)}
+                {changeView === 'list' ? entries.map(renderEntry) : renderDirectoryContents(changeTree(entries))}
               </div>
             )}
           </div>

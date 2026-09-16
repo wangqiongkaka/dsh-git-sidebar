@@ -282,6 +282,37 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+.gitTreeGroup {
+  width: 100%;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 12px;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-s-14);
+  cursor: pointer;
+  text-align: left;
+}
+
+.gitTreeGroupName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gitTreeGroup:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.gitTreeChildren {
+  margin-left: 20px;
+  border-left: 1px solid var(--dsw-alias-border-l2);
+}
+
 .gitRowMain {
   flex: 1;
   min-width: 0;
@@ -315,7 +346,8 @@
   color: var(--dsw-alias-state-error-primary);
 }
 
-.gitName {
+.gitName,
+.gitFileName {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -324,6 +356,21 @@
   font: var(--dsw-font-s-14);
   font-size: 13px;
   color: var(--dsw-alias-label-primary);
+}
+
+/* The list view keeps the file name whole and lets the directory take what is left. */
+.gitFileName {
+  flex: 0 1 auto;
+}
+
+.gitFilePath {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: var(--dsw-font-xxxs-11);
+  color: var(--dsw-alias-label-tertiary);
 }
 
 .gitEmpty {
