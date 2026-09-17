@@ -118,6 +118,13 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+.gitSectionActions {
+  flex: none;
+  display: flex;
+  gap: 12px;
+  margin-left: auto;
+}
+
 .gitRowActions {
   flex: none;
   display: none;

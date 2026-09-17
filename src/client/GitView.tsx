@@ -1020,7 +1020,8 @@ export function GitView(props: {
         />
       </div>
 
-      {loading && <div className={css.gitPlaceholder}>{t('loading')}</div>}
+      {/* Only the first load shows a placeholder; later refreshes swap data in place so the panel doesn't jump. */}
+      {loading && status === null && <div className={css.gitPlaceholder}>{t('loading')}</div>}
       {!loading && error !== null && <div className={css.gitError}>{error}</div>}
       {!loading && status !== null && !status.isRepo && (
         <div className={css.gitPlaceholder}>{t('notRepo')}</div>
@@ -1042,7 +1043,12 @@ export function GitView(props: {
                 <span>{t('changes')}</span>
                 <span className={css.gitSectionCount}>{entries.length}</span>
               </button>
-              {entries.length > 0 && <span className={css.gitSectionHint}>{t('tickToStage')}</span>}
+              {entries.length > 0 && (
+                <span className={css.gitSectionActions}>
+                  <button type="button" className={css.gitLink} disabled={busy} onClick={() => { void stageAll(allStaged) }}>{allStaged ? t('unstageAll') : t('stageAll')}</button>
+                  <button type="button" className={css.gitLink} onClick={() => { setChangeView(current => current === 'tree' ? 'list' : 'tree') }}>{t(changeView === 'tree' ? 'showAsList' : 'showAsTree')}</button>
+                </span>
+              )}
             </div>
             {expandedSections.changes && (
               <div id={`git-changes-${viewId}`} className={`${css.gitSectionBody} ${css.gitSectionBodyChanges}`} {...scrollProps('changes')}>

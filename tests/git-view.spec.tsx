@@ -248,6 +248,19 @@ describe('GitView change groups', () => {
       await act(async () => { checks[1]!.click(); await Promise.resolve() })
       expect(api.gitStage).toHaveBeenCalledWith({ sessionId: 'session-1', cwd: '/repo' }, 'unstaged.ts')
 
+      const headerLink = (labels: string[]) => [...container.querySelectorAll<HTMLButtonElement>('button')].find(button => labels.includes(button.textContent?.trim() ?? ''))
+      // Hold the refresh after "stage all" open: the list stays in place with no loading placeholder.
+      let releaseStatus!: () => void
+      vi.mocked(api.gitStatus).mockImplementationOnce(() => new Promise(resolve => { releaseStatus = () => { resolve(dirtyStatus) } }))
+      await act(async () => { headerLink(['Stage all', '全部 Add'])!.click(); await Promise.resolve(); await Promise.resolve() })
+      expect(api.gitStage).toHaveBeenCalledWith({ sessionId: 'session-1', cwd: '/repo' })
+      expect(container.textContent).not.toMatch(/Loading…|加载中…/)
+      expect(container.textContent).toContain('unstaged.ts')
+      await act(async () => { releaseStatus(); await Promise.resolve() })
+      await flush()
+      act(() => { headerLink(['List', '列表'])!.click() })
+      expect(headerLink(['Tree', '树形'])).toBeDefined()
+
       act(() => { toggles[0]!.click() })
       expect(toggles[0]!.getAttribute('aria-expanded')).toBe('false')
       expect(container.textContent).not.toContain('staged.ts')
