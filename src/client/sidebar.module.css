@@ -192,6 +192,7 @@
 /* History takes whatever height is left above the commit card instead of leaving a gap. */
 .gitSectionGrow {
   flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }
