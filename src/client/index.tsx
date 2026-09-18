@@ -83,11 +83,13 @@ export function apply(ctx: Context): void {
     const { tab } = useTabInfo()
     return <button type="button" className={css.guideEntry} data-sidebar-right-guide-entry={kind}
       onClick={() => { tab.actions.openTab(kind, { replaceTab: true }) }}>
-      <span className={css.guideIcon}><IconBranchOutline16 size={26} /></span>
+      <span className={css.guideIcon}><IconBranchOutline16 size={description === undefined ? 22 : 26} /></span>
       <span className={css.guideText}>
-        <span className={css.guideTitle}>{title}</span>
+        <span className={css.guideRow}>
+          <span className={css.guideTitle}>{title}</span>
+          <span className={css.guideLine}>{t('providedBy')}</span>
+        </span>
         {description !== undefined && <span className={css.guideLine}>{description}</span>}
-        <span className={css.guideLine}>{t('providedBy')}</span>
       </span>
     </button>
   }
