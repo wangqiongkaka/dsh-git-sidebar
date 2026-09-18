@@ -1119,6 +1119,9 @@ export function GitView(props: {
                     >
                       <span className={css.gitLogHash}>{entry.name}</span>
                       <span className={css.gitName}>{entry.subject}</span>
+                      <span className={`${css.gitTagState} ${entry.remoteState === 'synced' ? css.gitTagStateSynced : entry.remoteState === 'local' ? css.gitTagStateLocal : ''}`}>
+                        {t(entry.remoteState === 'synced' ? 'tagSynced' : entry.remoteState === 'local' ? 'tagLocal' : 'tagSyncUnknown')}
+                      </span>
                     </button>
                   </div>
                 ))}
@@ -1323,7 +1326,7 @@ export function GitView(props: {
             open={tagMenu !== null}
             onClose={() => { setTagMenu(null) }}
             items={[
-              { id: 'push', label: t('tagPush') },
+              { id: 'push', label: t('tagPush'), disabled: tagMenu?.entry.remoteState === 'synced' },
               { id: 'copy', label: t('tagCopyName'), icon: <IconCopyOutline16 size={14} /> },
               { type: 'separator', id: 'tag-separator' },
               { id: 'delete', label: t('tagDelete'), icon: <IconTrashOutline16 size={14} />, danger: true },

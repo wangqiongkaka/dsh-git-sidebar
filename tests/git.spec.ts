@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
 import { alignDiffLines, parseUnifiedDiff } from '../src/client/DiffView.tsx'
 import { defaultWorktreeDraft } from '../src/client/GitView.tsx'
-import { branches, createTag, deleteTag, discardAll, fastForward, parseLogLines, parsePorcelainZ, rebase, resetToUpstream, stash, stashList, stashPop, status, tags, wipCommit, wipUndo } from '../src/git.ts'
+import { branches, createTag, deleteTag, discardAll, fastForward, parseLogLines, parsePorcelainZ, pushTag, rebase, resetToUpstream, stash, stashList, stashPop, status, tags, wipCommit, wipUndo } from '../src/git.ts'
 
 describe('git worktree defaults', () => {
   it('creates a new branch draft based on the current branch', () => {
@@ -464,12 +464,12 @@ describe('tags', () => {
       await createTag(dir, 'v0.2.0', 'second release')
 
       expect(await tags(dir)).toEqual([
-        { name: 'v0.2.0', subject: 'second release' },
-        { name: 'v0.1.0', subject: 'base commit' },
+        { name: 'v0.2.0', subject: 'second release', remoteState: 'unknown' },
+        { name: 'v0.1.0', subject: 'base commit', remoteState: 'unknown' },
       ])
 
       await deleteTag(dir, 'v0.2.0')
-      expect(await tags(dir)).toEqual([{ name: 'v0.1.0', subject: 'base commit' }])
+      expect(await tags(dir)).toEqual([{ name: 'v0.1.0', subject: 'base commit', remoteState: 'unknown' }])
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
@@ -487,7 +487,7 @@ describe('tags', () => {
       await createTag(dir, '0.1.2')
 
       expect((await branches(dir)).names).toContain('0.1.2')
-      expect(await tags(dir)).toEqual([{ name: '0.1.2', subject: 'base commit' }])
+      expect(await tags(dir)).toEqual([{ name: '0.1.2', subject: 'base commit', remoteState: 'unknown' }])
       await deleteTag(dir, (await tags(dir))[0]!.name)
       expect(await tags(dir)).toEqual([])
     } finally {
@@ -513,9 +513,39 @@ describe('tags', () => {
       await createTag(dir, 'on-older', '', older)
 
       expect(gitRun(dir, ['rev-parse', 'on-older']).trim()).toBe(older)
-      expect(await tags(dir)).toEqual([{ name: 'on-older', subject: 'older commit' }])
+      expect(await tags(dir)).toEqual([{ name: 'on-older', subject: 'older commit', remoteState: 'unknown' }])
     } finally {
       rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('reports whether each local tag matches the preferred remote', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-sidebar-tag-sync-'))
+    const remote = mkdtempSync(join(tmpdir(), 'dsh-sidebar-tag-remote-'))
+    try {
+      gitRun(remote, ['init', '-q', '--bare'])
+      gitRun(dir, ['init', '-q'])
+      gitRun(dir, ['checkout', '-q', '-b', 'main'])
+      writeFileSync(join(dir, 'a.txt'), 'a\n')
+      gitRun(dir, ['add', '-A'])
+      gitRun(dir, ['commit', '-q', '-m', 'base commit'])
+      gitRun(dir, ['remote', 'add', 'origin', remote])
+      await createTag(dir, 'v0.1.0')
+      gitRun(dir, ['push', '-q', 'origin', 'refs/tags/v0.1.0'])
+      await createTag(dir, 'v0.2.0', 'local release')
+
+      const entries = await tags(dir)
+      expect(entries).toHaveLength(2)
+      expect(entries).toEqual(expect.arrayContaining([
+        { name: 'v0.2.0', subject: 'local release', remoteState: 'local' },
+        { name: 'v0.1.0', subject: 'base commit', remoteState: 'synced' },
+      ]))
+
+      await pushTag(dir, 'v0.2.0')
+      expect((await tags(dir)).find(entry => entry.name === 'v0.2.0')?.remoteState).toBe('synced')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+      rmSync(remote, { recursive: true, force: true })
     }
   })
 })

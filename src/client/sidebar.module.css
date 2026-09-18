@@ -400,6 +400,20 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+.gitTagState {
+  flex: none;
+  font: var(--dsw-font-xxxs-11);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.gitTagStateSynced {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.gitTagStateLocal {
+  color: var(--dsw-alias-state-warn-label);
+}
+
 .gitEmpty {
   padding: 4px 12px 8px;
   font: var(--dsw-font-xxs-12);

@@ -26,8 +26,8 @@ const stashStack: GitStashEntry[] = [
 ]
 
 const tagList: GitTagEntry[] = [
-  { name: 'v0.2.0', subject: 'second release' },
-  { name: 'v0.1.0', subject: 'base commit' },
+  { name: 'v0.2.0', subject: 'second release', remoteState: 'local' },
+  { name: 'v0.1.0', subject: 'base commit', remoteState: 'synced' },
 ]
 
 const logEntry: GitLogEntry = {
@@ -608,7 +608,12 @@ describe('GitView tags', () => {
       const rows = [...container.querySelectorAll('[id^="git-tag-entries-"] button')].map(node => node.textContent ?? '')
       expect(rows[0]).toContain('v0.2.0')
       expect(rows[0]).toContain('second release')
+      expect(rows[0]).toMatch(/Not synced|未同步/)
       expect(rows[1]).toContain('v0.1.0')
+      expect(rows[1]).toMatch(/Synced|已同步/)
+
+      await act(async () => { container.querySelectorAll<HTMLButtonElement>('[id^="git-tag-entries-"] button')[1]!.click(); await Promise.resolve() })
+      expect((menuItem('Push to remote') ?? menuItem('推送到远端'))?.hasAttribute('disabled')).toBe(true)
     } finally {
       act(() => { root.unmount() })
       container.remove()

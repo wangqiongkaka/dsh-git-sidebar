@@ -73,7 +73,12 @@ export interface GitTagEntry {
   name: string
   /** Annotation subject for an annotated tag; the tagged commit's subject for a lightweight one. */
   subject: string
+  /** Whether this exact tag object exists on the preferred remote. */
+  remoteState: 'synced' | 'local' | 'unknown'
 }
+
+// ponytail: process-local TTL cache; cap it if one host starts opening thousands of workspaces.
+const remoteTagCache = new Map<string, { expires: number; refs: Map<string, string> | null }>()
 
 /** One git failure (stderr text as the message). */
 export class GitCommandError extends Error {
@@ -503,12 +508,17 @@ export async function cherryPick(cwd: string, hash: string): Promise<void> {
  * annotation, so git falls back to the tagged commit's subject.
  */
 export async function tags(cwd: string): Promise<GitTagEntry[]> {
-  const raw = await runGit(cwd, [
-    'for-each-ref', '--sort=-creatordate', '--format=%(refname:strip=2)%1f%(contents:subject)', 'refs/tags',
+  const remote = await preferredRemote(cwd)
+  const [raw, remoteRaw] = await Promise.all([
+    runGit(cwd, [
+      'for-each-ref', '--sort=-creatordate', '--format=%(refname:strip=2)%1f%(contents:subject)%1f%(objectname)', 'refs/tags',
+    ]),
+    remote === undefined ? null : remoteTagRefs(cwd, remote),
   ])
   return raw.split('\n').filter(row => row !== '').map((row) => {
-    const [name, subject] = row.split('\x1f')
-    return { name: name ?? '', subject: subject ?? '' }
+    const [name = '', subject = '', object = ''] = row.split('\x1f')
+    const remoteState = remoteRaw === null ? 'unknown' : remoteRaw.get(name) === object ? 'synced' : 'local'
+    return { name, subject, remoteState }
   })
 }
 
@@ -528,9 +538,27 @@ export async function deleteTag(cwd: string, name: string): Promise<void> {
  * single remote is called something else should still work, so fall back to
  * the first configured remote rather than failing on a hard-coded name.
  */
-export async function pushTag(cwd: string, name: string): Promise<void> {
+async function preferredRemote(cwd: string): Promise<string | undefined> {
   const names = (await runGit(cwd, ['remote'])).split('\n').filter(line => line !== '')
-  const remote = names.includes('origin') ? 'origin' : names[0]
+  return names.includes('origin') ? 'origin' : names[0]
+}
+
+async function remoteTagRefs(cwd: string, remote: string): Promise<Map<string, string> | null> {
+  const key = `${cwd}\0${remote}`
+  const cached = remoteTagCache.get(key)
+  if (cached !== undefined && cached.expires > Date.now()) return cached.refs
+  const raw = await runGit(cwd, ['ls-remote', '--tags', '--refs', remote], 3_000).catch(() => null)
+  const refs = raw === null ? null : new Map(raw.split('\n').filter(Boolean).map((row) => {
+    const [object, ref] = row.split('\t')
+    return [ref?.replace(/^refs\/tags\//, '') ?? '', object ?? '']
+  }))
+  remoteTagCache.set(key, { expires: Date.now() + 60_000, refs })
+  return refs
+}
+
+export async function pushTag(cwd: string, name: string): Promise<void> {
+  const remote = await preferredRemote(cwd)
   if (remote === undefined) throw new GitCommandError('no remote configured', 'git-error', 'push tag')
   await runGit(cwd, ['push', remote, `refs/tags/${name}`], 120_000)
+  remoteTagCache.delete(`${cwd}\0${remote}`)
 }

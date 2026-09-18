@@ -38,6 +38,7 @@ export interface GitTagEntry {
   name: string
   /** Annotation subject for an annotated tag; the tagged commit's subject for a lightweight one. */
   subject: string
+  remoteState: 'synced' | 'local' | 'unknown'
 }
 
 /** One git log row. */
