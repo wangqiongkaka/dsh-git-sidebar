@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
-import { parseUnifiedDiff } from '../src/client/DiffView.tsx'
+import { alignDiffLines, parseUnifiedDiff } from '../src/client/DiffView.tsx'
 import { defaultWorktreeDraft } from '../src/client/GitView.tsx'
 import { branches, createTag, deleteTag, discardAll, fastForward, parseLogLines, parsePorcelainZ, rebase, resetToUpstream, stash, stashList, stashPop, status, tags, wipCommit, wipUndo } from '../src/git.ts'
 
@@ -154,6 +154,25 @@ describe('git parsing', () => {
   it('parses an empty or junk diff into no files', () => {
     expect(parseUnifiedDiff('').files).toEqual([])
     expect(parseUnifiedDiff('no diff here\n').files).toEqual([])
+  })
+
+  it('aligns delete/add blocks for split display', () => {
+    const lines = parseUnifiedDiff([
+      'diff --git a/a.ts b/a.ts',
+      '--- a/a.ts',
+      '+++ b/a.ts',
+      '@@ -1,3 +1,2 @@',
+      ' same',
+      '-old one',
+      '-old two',
+      '+new one',
+    ].join('\n')).files[0]!.hunks[0]!.lines
+
+    expect(alignDiffLines(lines).map(row => [row.old?.text ?? null, row.new?.text ?? null])).toEqual([
+      ['same', 'same'],
+      ['old one', 'new one'],
+      ['old two', null],
+    ])
   })
 })
 

@@ -52,6 +52,12 @@ export interface ParsedDiff {
   files: DiffFile[]
 }
 
+export interface SplitDiffLine {
+  old: DiffLine | null
+  new: DiffLine | null
+  meta?: string
+}
+
 /** Parse the hunk header `@@ -a[,b] +c[,d] @@ section` (section may contain '@@'). */
 function parseHunkHeader(line: string): { oldStart: number; newStart: number; header: string } | null {
   const match = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/.exec(line)
@@ -136,6 +142,34 @@ export function parseUnifiedDiff(text: string): ParsedDiff {
   return { files }
 }
 
+/** Align each contiguous delete/add block into old/new rows for split display. */
+export function alignDiffLines(lines: DiffLine[]): SplitDiffLine[] {
+  const rows: SplitDiffLine[] = []
+  let deleted: DiffLine[] = []
+  let added: DiffLine[] = []
+  const flush = (): void => {
+    for (let index = 0; index < Math.max(deleted.length, added.length); index += 1) {
+      rows.push({ old: deleted[index] ?? null, new: added[index] ?? null })
+    }
+    deleted = []
+    added = []
+  }
+  for (const line of lines) {
+    if (line.kind === 'del') {
+      if (added.length > 0) flush()
+      deleted.push(line)
+    } else if (line.kind === 'add') {
+      added.push(line)
+    } else {
+      flush()
+      if (line.kind === 'meta') rows.push({ old: null, new: null, meta: line.text })
+      else rows.push({ old: line, new: line })
+    }
+  }
+  flush()
+  return rows
+}
+
 /** Build the untracked-file shape: one file, one hunk of pure additions. */
 function untrackedFile(path: string, content: string): DiffFile {
   const lines: DiffLine[] = []
@@ -212,13 +246,13 @@ export function DiffView({ diff, untrackedPath, untrackedContent }: DiffViewProp
 
   // Flatten into display rows so the cap can slice a single list.
   const rows = useMemo(() => {
-    const out: Array<{ key: string; file: DiffFile; fileIndex: number; type: 'path' | 'hunk' | 'line'; hunk?: DiffHunk; line?: DiffLine }> = []
+    const out: Array<{ key: string; file: DiffFile; fileIndex: number; type: 'path' | 'hunk' | 'line'; hunk?: DiffHunk; line?: SplitDiffLine }> = []
     parsed.files.forEach((file, fileIndex) => {
       out.push({ key: `f${fileIndex}`, file, fileIndex, type: 'path' })
       if (file.binary || !expandedFiles.has(fileIndex)) return
       file.hunks.forEach((hunk, hunkIndex) => {
         out.push({ key: `f${fileIndex}h${hunkIndex}`, file, fileIndex, type: 'hunk', hunk })
-        hunk.lines.forEach((line, lineIndex) => {
+        alignDiffLines(hunk.lines).forEach((line, lineIndex) => {
           out.push({ key: `f${fileIndex}h${hunkIndex}l${lineIndex}`, file, fileIndex, type: 'line', hunk, line })
         })
       })
@@ -275,31 +309,41 @@ export function DiffView({ diff, untrackedPath, untrackedContent }: DiffViewProp
       )
     }
     const line = row.line!
-    const lineClass = line.kind === 'del' ? css.gitDiffDel : line.kind === 'add' ? css.gitDiffAdd : line.kind === 'meta' ? css.gitDiffMeta : css.gitDiffCtx
-    return (
-      <div key={row.key} className={clsx(css.gitDiffLine, lineClass)}>
-        {line.kind === 'meta'
-          ? <span className={css.gitDiffMetaText}>{line.text}</span>
-          : (
+    if (line.meta !== undefined) {
+      return <div key={row.key} className={css.gitDiffMeta}><span className={css.gitDiffMetaText}>{line.meta}</span></div>
+    }
+    const renderSide = (side: 'old' | 'new'): ReactNode => {
+      const value = line[side]
+      return (
+        <div className={clsx(css.gitDiffSide, value?.kind === 'del' && css.gitDiffDel, value?.kind === 'add' && css.gitDiffAdd)}>
+          {value !== null && (
             <>
-              <span className={css.gitDiffNum}>{line.oldNum ?? ''}</span>
-              <span className={css.gitDiffNum}>{line.newNum ?? ''}</span>
-              <span className={css.gitDiffCode}>{line.text}</span>
+              <span className={css.gitDiffNum}>{side === 'old' ? value.oldNum : value.newNum}</span>
+              <span className={css.gitDiffCode}>{value.text}</span>
             </>
           )}
+        </div>
+      )
+    }
+    return (
+      <div key={row.key} className={css.gitDiffLine}>
+        {renderSide('old')}
+        {renderSide('new')}
       </div>
     )
   }
 
   return (
     <div className={css.gitDiff}>
-      {head.map(renderRow)}
-      {hidden > 0 && (
-        <button type="button" className={css.gitDiffExpand} aria-expanded={expanded} onClick={() => { setExpanded(value => !value) }}>
-          {expanded ? t('diffCollapse') : t('diffExpand', { count: hidden })}
-        </button>
-      )}
-      {tail.map(renderRow)}
+      <div className={css.gitDiffBody}>
+        {head.map(renderRow)}
+        {hidden > 0 && (
+          <button type="button" className={css.gitDiffExpand} aria-expanded={expanded} onClick={() => { setExpanded(value => !value) }}>
+            {expanded ? t('diffCollapse') : t('diffExpand', { count: hidden })}
+          </button>
+        )}
+        {tail.map(renderRow)}
+      </div>
     </div>
   )
 }

@@ -422,6 +422,11 @@
 .gitDiff {
   border-top: 1px solid var(--dsw-alias-border-l1);
   padding: 8px;
+  overflow-x: auto;
+}
+
+.gitDiffBody {
+  min-width: 640px;
 }
 
 .gitDiffTab {
@@ -532,18 +537,27 @@
 }
 
 .gitDiffLine {
-  display: flex;
-  align-items: stretch;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   font: var(--dsw-font-markdown-code-block-small);
   line-height: 20px;
+  min-width: 0;
+}
+
+.gitDiffSide {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  min-height: 20px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   min-width: 0;
 }
 
+.gitDiffSide:first-child {
+  border-right: 1px solid var(--dsw-alias-border-l1);
+}
+
 .gitDiffNum {
-  flex: none;
-  width: 36px;
   padding-right: 8px;
   text-align: right;
   color: var(--dsw-alias-label-tertiary);
@@ -554,10 +568,6 @@
   flex: 1;
   min-width: 0;
   overflow: visible;
-}
-
-.gitDiffCtx {
-  color: var(--dsw-alias-label-primary);
 }
 
 .gitDiffDel {
@@ -571,7 +581,7 @@
 }
 
 .gitDiffMeta {
-  padding-left: 2px;
+  padding-left: 46px;
 }
 
 .gitDiffMetaText {
