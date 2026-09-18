@@ -15,12 +15,13 @@
 - Worktree：创建、打开对应 DSH 会话、合并和删除。
 - 自动刷新：面板可见时每 5 秒静默重读状态，窗口获焦或标签页切回前台时立即刷新；刷新和切回标签页都保留折叠状态、滚动位置和已加载的历史分页。
 - 每个区域独立滚动并限制最大高度，提交框固定在面板底部。
+- 引导页入口：右侧边栏引导页的「源代码管理」卡片由本插件提供，显示本插件的名称，点击直接打开 Git 标签；Worktree 打开会话与新建会话都经 DSH 工作区导航，与其他入口一致。
 
 差异按会话、文件、提交或提交区间分别打开标签页，布局与分屏由 DSH 管理；文件通过 DSH 文件预览器打开。远端操作使用本机已有的 Git 认证和身份。
 
 ## 安装
 
-需要提供 `sidebarRightTabs` 和 `sidebar.right.pane.tab` 的 DSH（本地已按 `0.1.5-rc.2` 接口构建）。开发依赖的 `link:` 指向相邻的 `deepseek-harness` 源码 checkout；目录位置不同时需先调整开发链接，打包产物不依赖该路径。
+需要提供 `sidebarRightTabs`、`sidebar.right.pane.tab`、`sidebar.right.tab.guide.entry` 和 `uiWorkspace` 的 DSH（本地已按 `0.1.5-rc.2` 接口构建）。开发依赖的 `link:` 指向相邻的 `deepseek-harness` 源码 checkout；目录位置不同时需先调整开发链接，打包产物不依赖该路径。
 
 在插件目录安装依赖并打包：
 
@@ -33,7 +34,7 @@ pnpm pack
 从 DSH 源码目录安装打包产物：
 
 ```sh
-pnpm dsh plugin --profile web add file:/绝对路径/dsh-git-sidebar-0.1.6.tgz
+pnpm dsh plugin --profile web add file:/绝对路径/dsh-git-sidebar-0.1.7.tgz
 ```
 
 使用已安装的 DSH CLI 时去掉前面的 `pnpm`。重新启动对应 Web 服务后，关闭旧标签页，重新打开终端打印的 URL，在引导页选择「源代码管理」。已有标签页时可通过标签栏的「+」回到引导页。
@@ -46,7 +47,7 @@ pnpm dsh plugin --profile web add file:/绝对路径/dsh-git-sidebar-0.1.6.tgz
 
 ## 验证
 
-`pnpm typecheck`、`pnpm test`（45 项）和 `pnpm build` 已通过。0.1.3 时已在本机 DSH web profile 中检查引导页入口、变更列表与勾选 Add、历史图谱、两组菜单和自动刷新；之后新增的列表 / 树切换与目录折叠、WIP 提交、回到远端状态、同步变基和历史自动加载由单元测试覆盖，未在本机 DSH 中逐项实测。未执行用户仓库的推送或丢弃操作。「添加到聊天」「解释更改」依赖 DSH 会话接口，未实测发送。
+`pnpm typecheck`、`pnpm test`（50 项）和 `pnpm build` 已通过。0.1.3 时已在本机 DSH web profile 中检查引导页入口、变更列表与勾选 Add、历史图谱、两组菜单和自动刷新；之后新增的列表 / 树切换与目录折叠、WIP 提交、回到远端状态、同步变基、历史自动加载、引导页卡片和 Worktree 会话导航由单元测试覆盖，未在本机 DSH 中逐项实测。未执行用户仓库的推送或丢弃操作。「添加到聊天」「解释更改」依赖 DSH 会话接口，未实测发送。
 
 ## 许可证
 

@@ -7,6 +7,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type {} from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import { IconBranchOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { sessionFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
@@ -15,8 +16,9 @@ import { DiffTab } from './DiffTab.tsx'
 import { api } from './api.ts'
 import { attachLocale, en, LOCALE_NS, t, zh } from './locales.ts'
 import { diffAddress, parseDiffAddress, diffTitle } from './navigation.ts'
+import css from './sidebar.module.css'
 
-export const inject = ['slots', 'locale', 'sidebarRightTabs', 'sessions', 'workspaces']
+export const inject = ['slots', 'locale', 'sidebarRightTabs', 'sessions', 'workspaces', 'uiWorkspace']
 
 /** Mount independent views; every registration is released on plugin unload. */
 export function apply(ctx: Context): void {
@@ -60,10 +62,10 @@ export function apply(ctx: Context): void {
       }}
       onOpenWorktree={async path => {
         const existing = Object.values(ctx.sessions.list.getSnapshot().byId).find(session => session.cwd === path && session.origin !== 'subagent')
-        if (existing !== undefined) { ctx.sessions.open(existing.id); return }
+        if (existing !== undefined) { ctx.uiWorkspace.openSession(existing.id); return }
         const workspace = await ctx.workspaces.create({ path })
         const id = await ctx.sessions.create({ workspaceId: workspace.workspaceId })
-        ctx.sessions.open(id)
+        ctx.uiWorkspace.openSession(id)
       }}
     />
   }
@@ -75,6 +77,20 @@ export function apply(ctx: Context): void {
     if (value === undefined || value.sessionId !== sessionId) return <p>{t('diffLoadError')}</p>
     return <DiffTab sessionId={sessionId} cwd={cwd} diff={value.diff} />
   }
+  // The guide's card for this tab: the host's capsule, plus the plugin that provides it.
+  function GuideEntry({ kind, title, description, useTabInfo }: PropsRuntime<'sidebar.right.tab.guide.entry'>) {
+    useLanguage()
+    const { tab } = useTabInfo()
+    return <button type="button" className={css.guideEntry} data-sidebar-right-guide-entry={kind}
+      onClick={() => { tab.actions.openTab(kind, { replaceTab: true }) }}>
+      <span className={css.guideIcon}><IconBranchOutline16 size={26} /></span>
+      <span className={css.guideText}>
+        <span className={css.guideTitle}>{title}</span>
+        {description !== undefined && <span className={css.guideLine}>{description}</span>}
+        <span className={css.guideLine}>{t('providedBy')}</span>
+      </span>
+    </button>
+  }
   function GitTitle() { useLanguage(); return <><IconBranchOutline16 size={16} /> {t('git')}</> }
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register(
     { name: 'sidebar.right.pane.tab', key: 'dsh-git-sidebar' }, GitBody,
@@ -84,5 +100,8 @@ export function apply(ctx: Context): void {
   )))
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab.title', () => ctx.slots.register(
     { name: 'sidebar.right.pane.tab.title', key: 'dsh-git-sidebar' }, GitTitle,
+  )))
+  ctx.effect(() => ctx.slots.inject('sidebar.right.tab.guide.entry', () => ctx.slots.register(
+    { name: 'sidebar.right.tab.guide.entry', key: 'dsh-git-sidebar' }, GuideEntry,
   )))
 }

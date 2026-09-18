@@ -977,3 +977,54 @@
     transition: none;
     animation: none;
   }
+
+/* Right sidebar guide card: the host capsule's geometry, with a line naming this plugin. */
+.guideEntry {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 56px;
+  padding: 14px 20px;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  text-align: left;
+  background: var(--dsw-alias-bg-layer-1);
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 24px;
+  cursor: pointer;
+}
+
+.guideEntry:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.guideIcon {
+  display: flex;
+  flex: none;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.guideText {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.guideTitle,
+.guideLine {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.guideTitle {
+  font: var(--dsw-font-s-14);
+}
+
+.guideLine {
+  color: var(--dsw-alias-label-caption);
+  font: var(--dsw-font-xs-13);
+}

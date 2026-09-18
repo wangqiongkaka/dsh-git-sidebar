@@ -1,6 +1,6 @@
 {
   "name": "dsh-git-sidebar",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Git source control and diff tabs for the built-in DSH right sidebar",
   "type": "module",
   "license": "MIT",
@@ -35,7 +35,8 @@
         "@deepseek-ai/dsh-client-ui-sidebar-right",
         "@deepseek-ai/dsh-client-ui-session",
         "@deepseek-ai/dsh-api-session-controller",
-        "@deepseek-ai/dsh-api-workspace-controller"
+        "@deepseek-ai/dsh-api-workspace-controller",
+        "@deepseek-ai/dsh-client-ui-workspace"
       ]
     }
   },
@@ -73,6 +74,7 @@
     "@deepseek-ai/dsh-client-ui-primitives": "link:../../deepseek-harness/packages/client/ui-primitives",
     "@deepseek-ai/dsh-api-session-controller": "link:../../deepseek-harness/packages/api/session-controller",
     "@deepseek-ai/dsh-api-workspace-controller": "link:../../deepseek-harness/packages/api/workspace-controller",
+    "@deepseek-ai/dsh-client-ui-workspace": "link:../../deepseek-harness/packages/client/ui-workspace",
     "@deepseek-ai/dsh-util-workspace-path": "link:../../deepseek-harness/packages/util/workspace-path"
   }
 }

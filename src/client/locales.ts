@@ -2,6 +2,7 @@
 export const zh = {
   git: '源代码管理',
   gitGuideDesc: '查看变更、提交并同步分支',
+  providedBy: '由 dsh-git-sidebar 插件提供',
   close: '关闭',
   refresh: '刷新',
   loading: '加载中…',
@@ -182,6 +183,7 @@ export const zh = {
 export const en = {
   git: 'Source Control',
   gitGuideDesc: 'Review changes, commit, and sync branches',
+  providedBy: 'Provided by the dsh-git-sidebar plugin',
   close: 'Close',
   refresh: 'Refresh',
   loading: 'Loading…',
