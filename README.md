@@ -21,7 +21,7 @@
 
 ## 安装
 
-需要提供 `sidebarRightTabs`、`sidebar.right.pane.tab`、`sidebar.right.tab.guide.entry` 和 `uiWorkspace` 的 DSH（本地已按 `0.1.5-rc.2` 接口构建）。开发依赖的 `link:` 指向相邻的 `deepseek-harness` 源码 checkout；目录位置不同时需先调整开发链接，打包产物不依赖该路径。
+本插件依赖 DSH 的 `sidebarRightTabs`、`uiWorkspace`、`sidebar.right.pane.tab` 和 `sidebar.right.tab.guide.entry` 接口，其中引导页卡片用到的 `sidebar.right.tab.guide.entry` 插槽自 `0.1.6-alpha.1` 引入，因此要求 **DSH ≥ 0.1.6-alpha.1**；其余接口自 `0.1.5-alpha.1` 起可用。低于该版本的 DSH 加载插件时会因依赖缺失而失败，插件标签与引导页卡片都不会出现。开发与验证所用的 `deepseek-harness` 源码 checkout 为 `0.1.6-alpha.2`，开发依赖的 `link:` 指向相邻的 `deepseek-harness` 目录；目录位置不同时需先调整开发链接，打包产物不依赖该路径。
 
 在插件目录安装依赖并打包：
 
@@ -47,7 +47,7 @@ pnpm dsh plugin --profile web add file:/绝对路径/dsh-git-sidebar-0.1.7.tgz
 
 ## 验证
 
-`pnpm typecheck`、`pnpm test`（50 项）和 `pnpm build` 已通过。0.1.3 时已在本机 DSH web profile 中检查引导页入口、变更列表与勾选 Add、历史图谱、两组菜单和自动刷新；之后新增的列表 / 树切换与目录折叠、WIP 提交、回到远端状态、同步变基、历史自动加载、引导页卡片和 Worktree 会话导航由单元测试覆盖，未在本机 DSH 中逐项实测。未执行用户仓库的推送或丢弃操作。「添加到聊天」「解释更改」依赖 DSH 会话接口，未实测发送。
+`pnpm typecheck`、`pnpm test`（50 项）和 `pnpm build` 已通过；`tsc`、Vitest 与打包均在本机 `deepseek-harness` `0.1.6-alpha.2` checkout（开发 `link:` 的目标）上运行。0.1.3 时已在本机 DSH web profile 中检查引导页入口、变更列表与勾选 Add、历史图谱、两组菜单和自动刷新；之后新增的列表 / 树切换与目录折叠、WIP 提交、回到远端状态、同步变基、历史自动加载、引导页卡片和 Worktree 会话导航由单元测试覆盖，未在本机 DSH 中逐项实测。未执行用户仓库的推送或丢弃操作。「添加到聊天」「解释更改」依赖 DSH 会话接口，未实测发送。
 
 ## 许可证
 
