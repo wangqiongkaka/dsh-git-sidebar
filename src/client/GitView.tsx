@@ -16,6 +16,7 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { GitLogEntry, GitOperation, GitStashEntry, GitStatusEntry, GitStatusResult, GitTagEntry, GitWorktree, SessionScope } from './api.ts'
 import { api } from './api.ts'
+import { isBrowserDocument } from '../browser-document.ts'
 import { layoutGraph, type GraphRow } from './graph.ts'
 import { relativeTo } from './paths.ts'
 import { relativeTime, t } from './locales.ts'
@@ -1241,6 +1242,9 @@ export function GitView(props: {
             onClose={() => { setFileMenu(null) }}
             items={[
               { id: 'open', label: t('openEditor'), icon: <IconCodeOutline16 size={14} /> },
+              ...(fileMenu !== null && isBrowserDocument(fileMenu.entry.path)
+                ? [{ id: 'browser', label: t('openInBrowser') }]
+                : []),
               fileMenu?.staged === true
                 ? { id: 'stage', label: t('unstage'), icon: <IconTrashOutline16 size={14} /> }
                 : { id: 'stage', label: t('stage'), icon: <IconBranchOutline16 size={14} /> },
@@ -1257,6 +1261,11 @@ export function GitView(props: {
               setFileMenu(null)
               if (id === 'open') {
                 void Promise.resolve().then(() => onOpenFile(target.entry.path)).catch(reason => { setCommitError(reason instanceof Error ? reason.message : String(reason)) })
+                return
+              }
+              if (id === 'browser') {
+                void api.fsOpenInBrowser(scope, target.entry.path)
+                  .catch(reason => { setCommitError(reason instanceof Error ? reason.message : String(reason)) })
                 return
               }
               if (id === 'stage') {

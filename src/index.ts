@@ -2,6 +2,8 @@
 import { open, stat } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
 import Schema from 'schemastery'
+import { canOpenNativePath, openNativePath } from '@deepseek-ai/dsh-native-command'
+import { isBrowserDocument } from './browser-document.ts'
 import type { Context } from './context-types.ts'
 import * as git from './git.ts'
 import { isTrustedApiRequest } from './trust-fence.ts'
@@ -97,6 +99,33 @@ async function resolveGitPath(cwd: string, raw: string): Promise<string> {
 
 const READ_HEAD_LIMIT = 4096
 
+/** Launch one absolute path on this host (injectable so tests never spawn an application). */
+export type PathOpener = (path: string) => Promise<void>
+
+/**
+ * The default opener for `fs.open-in-browser`: hand the document to the
+ * operating system, which opens HTML in the default browser (`openNativePath`
+ * resolves the browser itself, preferring the default browser over whatever
+ * else claims the suffix). A host with no desktop refuses up front instead of
+ * spawning an opener into nothing. The signal is deliberately never aborted:
+ * `open`/`xdg-open` return as soon as the application is launched, and the
+ * window outlives the request that asked for it.
+ * @param path - absolute path of an HTML document.
+ * @returns after the native opener exited successfully.
+ */
+export async function openInDefaultBrowser(path: string): Promise<void> {
+  if (!canOpenNativePath()) {
+    throw new SidebarError('bad-request', 'this host has no desktop browser to open a document with')
+  }
+  await openNativePath(path, new AbortController().signal)
+}
+
+/** Refuse any path this route must not launch: it opens HTML documents only. */
+function requireBrowserDocument(path: string): string {
+  if (!isBrowserDocument(path)) throw new SidebarError('bad-request', 'expected an HTML document')
+  return path
+}
+
 /** Text read of a file with the size cap; binary detection via NUL probe.
  *  Binary reads also return the first {@link READ_HEAD_LIMIT} bytes (base64)
  *  so the client can re-match viewers by content (`detect`). */
@@ -132,7 +161,11 @@ async function readText(path: string, readLimit: number): Promise<{
   }
 }
 
-export function buildApi(ctx: Context, readLimit: number): Record<string, (payload: unknown) => Promise<unknown>> {
+export function buildApi(
+  ctx: Context,
+  readLimit: number,
+  openPath: PathOpener = openInDefaultBrowser,
+): Record<string, (payload: unknown) => Promise<unknown>> {
   const cwdOf = (payload: unknown) => {
     const sessionId = requireString(payload, 'sessionId')
     const record = payload as { cwd?: unknown }
@@ -144,6 +177,18 @@ export function buildApi(ctx: Context, readLimit: number): Record<string, (paylo
       const path = await resolveGitPath(cwd, requireString(payload, 'path'))
       const result = await readText(path, readLimit)
       return { ...result, kind: result.binary ? 'binary' : 'text' }
+    },
+    'fs.open-in-browser': async (payload) => {
+      const { cwd } = cwdOf(payload)
+      const path = requireBrowserDocument(await resolveGitPath(cwd, requireString(payload, 'path')))
+      const info = await stat(path).catch((error: unknown) => {
+        throw new SidebarError('fs-error', `cannot open "${path}": ${error instanceof Error ? error.message : String(error)}`, 400)
+      })
+      if (!info.isFile()) throw new SidebarError('fs-error', `"${path}" is not a regular file`, 400)
+      // The panel only offers this for a change row that exists; a launch
+      // failure is reported as-is rather than swallowed.
+      await openPath(path)
+      return { ok: true }
     },
     'git.path': async (payload) => ({ path: await resolveGitPath(cwdOf(payload).cwd, requireString(payload, 'path')) }),
     'git.status': async (payload) => {
@@ -373,9 +418,9 @@ export function buildApi(ctx: Context, readLimit: number): Record<string, (paylo
   }
 }
 
-export function apply(ctx: Context, config: { readLimit: number }): void {
+export function apply(ctx: Context, config: { readLimit: number }, openPath: PathOpener = openInDefaultBrowser): void {
   const fence = (req: Parameters<typeof isTrustedApiRequest>[0]) => isTrustedApiRequest(req, ctx.webRuntime.trustedHosts)
-  const api = buildApi(ctx, config.readLimit)
+  const api = buildApi(ctx, config.readLimit, openPath)
   ctx.effect(() => ctx.webServer.register({
     kind: 'prefix',
     path: '/git-sidebar/api',

@@ -725,3 +725,51 @@ describe('GitView tags', () => {
     }
   })
 })
+
+describe('GitView change row menu', () => {
+  /** Right-click the change row carrying one path (the row main button). */
+  const openRowMenu = (container: HTMLElement, path: string): void => {
+    const row = container.querySelector<HTMLButtonElement>(`button[title="${path}"]`)!
+    act(() => { row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })) })
+  }
+  const browserItem = (): HTMLElement | undefined => menuItem('Open in browser') ?? menuItem('在浏览器中打开')
+
+  it('offers to open an HTML change in the browser, and only for HTML', async () => {
+    vi.mocked(api.gitStatus).mockResolvedValue({
+      ...dirtyStatus,
+      entries: [{ path: 'delegation-command-design.html', xy: '??' }, { path: 'new.ts', xy: '??' }],
+    })
+    const open = vi.spyOn(api, 'fsOpenInBrowser').mockResolvedValue({ ok: true })
+    const { container, root } = renderGitView()
+    try {
+      await flush()
+      openRowMenu(container, 'delegation-command-design.html')
+      expect(browserItem()).toBeDefined()
+      await act(async () => { browserItem()!.click(); await Promise.resolve() })
+      expect(open).toHaveBeenCalledWith({ sessionId: 'session-1', cwd: '/repo' }, 'delegation-command-design.html')
+
+      // WHY: the host refuses any other suffix, so the menu must not offer it.
+      openRowMenu(container, 'new.ts')
+      expect(browserItem()).toBeUndefined()
+    } finally {
+      act(() => { root.unmount() })
+      container.remove()
+    }
+  })
+
+  it('shows the host message when the browser cannot be launched', async () => {
+    vi.mocked(api.gitStatus).mockResolvedValue({ ...dirtyStatus, entries: [{ path: 'design.html', xy: '??' }] })
+    vi.spyOn(api, 'fsOpenInBrowser').mockRejectedValue(new Error('no browser here'))
+    const { container, root } = renderGitView()
+    try {
+      await flush()
+      openRowMenu(container, 'design.html')
+      await act(async () => { browserItem()!.click(); await Promise.resolve() })
+      await flush()
+      expect(container.textContent).toContain('no browser here')
+    } finally {
+      act(() => { root.unmount() })
+      container.remove()
+    }
+  })
+})

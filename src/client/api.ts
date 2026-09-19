@@ -112,6 +112,9 @@ export const api = {
   gitPath: (scope: SessionScope, path: string) => call<{ path: string }>('git.path', scopePayload(scope, { path })),
   fsRead: (scope: SessionScope, path: string, signal?: AbortSignal) =>
     call<FsTextResult | FsBinaryResult>('fs.read', scopePayload(scope, { path }), signal),
+  /** Open one HTML document of the workspace in the host's default browser. */
+  fsOpenInBrowser: (scope: SessionScope, path: string) =>
+    call<{ ok: true }>('fs.open-in-browser', scopePayload(scope, { path })),
   gitStatus: (scope: SessionScope, signal?: AbortSignal) =>
     call<GitStatusResult>('git.status', scopePayload(scope, {}), signal),
   gitDiff: (scope: SessionScope, path: string | undefined, staged: boolean, signal?: AbortSignal) =>
