@@ -14,7 +14,7 @@ import {
   Button, IconBranchOutline16, IconChevronRightOutline14, IconCodeOutline16, IconCopyOutline16, IconEllipsisOutline16, IconRefreshOutline16,
   IconSendOutline14, IconTrashOutline16, Input, Menu, Modal, writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { GitLogEntry, GitOperation, GitStashEntry, GitStatusEntry, GitStatusResult, GitTagEntry, GitWorktree, SessionScope } from './api.ts'
+import type { GitBranchEntry, GitBranchOverview, GitLogEntry, GitOperation, GitStashEntry, GitStatusEntry, GitStatusResult, GitTagEntry, GitWorktree, SessionScope } from './api.ts'
 import { api } from './api.ts'
 import { layoutGraph, type GraphRow } from './graph.ts'
 import { relativeTo } from './paths.ts'
@@ -258,6 +258,13 @@ export function GitView(props: {
   const [worktreeMerge, setWorktreeMerge] = useState<GitWorktree | null>(null)
   const [worktreeTarget, setWorktreeTarget] = useState('')
   const [operation, setOperation] = useState<GitOperation | null>(null)
+  /** Branch manager: the open modal, which list it shows, and the checked rows. */
+  const [branchManagerOpen, setBranchManagerOpen] = useState(false)
+  const [branchTab, setBranchTab] = useState<'local' | 'remote'>('local')
+  const [branchOverview, setBranchOverview] = useState<GitBranchOverview | null>(null)
+  const [branchSelection, setBranchSelection] = useState<Set<string>>(() => new Set())
+  const [branchForce, setBranchForce] = useState(false)
+  const [branchManagerError, setBranchManagerError] = useState<string | null>(null)
   const graph = useMemo(() => layoutGraph(logEntries), [logEntries])
   /** Whether the history was fully paged (a batch shorter than LOG_BATCH). */
   const [logEnded, setLogEnded] = useState(false)
@@ -348,6 +355,16 @@ export function GitView(props: {
   }, [scope.sessionId, scope.cwd])
 
   useEffect(() => { void refresh() }, [refresh])
+
+  /** Load the branch manager rows; only the open modal needs them, so this
+   *  stays out of `refresh` (three more `for-each-ref` runs per poll). */
+  const loadBranchOverview = useCallback(async (): Promise<void> => {
+    try {
+      setBranchOverview(await api.gitBranchList(scope))
+    } catch (reason) {
+      setBranchManagerError(reason instanceof Error ? reason.message : String(reason))
+    }
+  }, [scope.sessionId, scope.cwd])
 
   // Restore every scroll box once the first load has painted the lists.
   const restoredRef = useRef(false)
@@ -773,6 +790,61 @@ export function GitView(props: {
     } })
   }
 
+  /** Open the branch manager with a clean selection. */
+  const openBranchManager = (): void => {
+    setBranchManagerError(null)
+    setBranchSelection(new Set())
+    setBranchForce(false)
+    setBranchTab('local')
+    setBranchOverview(null)
+    setBranchManagerOpen(true)
+    void loadBranchOverview()
+  }
+
+  /** Delete every checked branch in one batch; the failures come back per
+   *  branch, so a partial failure still reports exactly what survived. */
+  const deleteSelectedBranches = (): void => {
+    const names = [...branchSelection]
+    if (names.length === 0) return
+    const remote = branchTab === 'remote'
+    const force = branchForce && !remote
+    setBranchManagerOpen(false)
+    runConfirmed({
+      title: t(remote ? 'branchDeleteRemoteTitle' : 'branchDeleteLocalTitle'),
+      description: t(remote ? 'branchDeleteRemoteDesc' : force ? 'branchDeleteForceDesc' : 'branchDeleteLocalDesc', { names: names.join(', ') }),
+      confirmLabel: t('branchDeleteConfirm'),
+      onConfirm: async () => {
+        const { failed } = await api.gitBranchDelete(scope, names, { remote, force })
+        setBranchSelection(new Set(failed.map(entry => entry.name)))
+        if (failed.length > 0) {
+          // runConfirmed skips its refresh once this throws, but the branches
+          // that DID get deleted are already gone from the panel's data.
+          await refresh()
+          throw new Error(failed.map(entry => `${entry.name}: ${entry.message}`).join('\n'))
+        }
+      },
+    })
+  }
+
+  /** The rows the branch manager currently lists. */
+  const branchRows: GitBranchEntry[] = (branchTab === 'local' ? branchOverview?.local : branchOverview?.remotes) ?? []
+
+  /** Check every listed row matching `pick`; the current branch is never deletable. */
+  const selectBranches = (pick: (entry: GitBranchEntry) => boolean): void => {
+    setBranchSelection(new Set(branchRows.filter(entry => !entry.current && pick(entry)).map(entry => entry.name)))
+  }
+
+  /** Drop remote-tracking refs whose branch no longer exists on the remote. */
+  const pruneRemoteBranches = (): void => {
+    setBranchManagerOpen(false)
+    runConfirmed({
+      title: t('branchPruneTitle'),
+      description: t('branchPruneDesc', { remote: branchOverview?.remote ?? '' }),
+      confirmLabel: t('branchPrune'),
+      onConfirm: () => api.gitBranchPrune(scope),
+    })
+  }
+
   /** Copy `text` to the clipboard (best-effort; no visual feedback needed — the menu closes). */
   const copy = (text: string): void => {
     void writeClipboard(text)
@@ -955,6 +1027,7 @@ export function GitView(props: {
             { id: 'merge', label: t('mergeBranchMenu'), disabled: branchNames.every(name => name === status?.branch) },
             { id: 'rebase', label: t('rebaseBranchMenu'), disabled: branchNames.every(name => name === status?.branch) },
             { id: 'worktree', label: t('worktreesMenu') },
+            { id: 'branch-manage', label: t('branchManageMenu') },
             { id: 'reset-to-remote', label: t('resetToRemoteMenu'), disabled: (status?.ahead ?? 0) === 0 || (status?.behind ?? 0) > 0 },
             { type: 'separator', id: 'branch-separator' },
             { type: 'label', id: 'label-worktree', text: t('groupWorkingTree') },
@@ -994,6 +1067,7 @@ export function GitView(props: {
                 onConfirm: () => api.gitDiscardAll(scope),
               })
             }
+            if (id === 'branch-manage') openBranchManager()
             if (id === 'merge') setMergeSource(branch)
             if (id === 'rebase') setRebaseTarget(branch)
             if (id === 'reset-to-remote') {
@@ -1423,7 +1497,10 @@ export function GitView(props: {
                   title: t('branchDeleteTitle'),
                   description: t('branchDeleteDesc', { name }),
                   confirmLabel: t('branchDelete'),
-                  onConfirm: () => api.gitBranchDelete(scope, name),
+                  onConfirm: async () => {
+                    const { failed } = await api.gitBranchDelete(scope, [name])
+                    if (failed.length > 0) throw new Error(failed[0]!.message)
+                  },
                 })
               }
               if (id === 'tag') { setTagDraftError(null); setTagDraft({ commit: entry, name: '', message: '' }) }
@@ -1766,6 +1843,85 @@ export function GitView(props: {
             <option key={entry.path} value={entry.path}>{entry.branch}</option>
           ))}
         </select>
+      </Modal>
+
+      <Modal
+        open={branchManagerOpen}
+        onClose={() => { setBranchManagerOpen(false) }}
+        title={t('branchManageTitle')}
+        closeLabel={t('close')}
+        footer={(
+          <>
+            <Button variant="outline" onClick={() => { setBranchManagerOpen(false) }}>{t('close')}</Button>
+            <Button variant="primary" disabled={busy || branchSelection.size === 0} onClick={deleteSelectedBranches}>
+              {t('branchDeleteSelected', { count: branchSelection.size })}
+            </Button>
+          </>
+        )}
+      >
+        <div className={css.gitBranchTabs}>
+          {(['local', 'remote'] as const).map(tab => (
+            <button
+              key={tab}
+              type="button"
+              className={branchTab === tab ? css.gitBranchTabActive : css.gitBranchTab}
+              aria-pressed={branchTab === tab}
+              onClick={() => { setBranchTab(tab); setBranchSelection(new Set()) }}
+            >
+              {t(tab === 'local' ? 'branchLocalTab' : 'branchRemoteTab')}
+            </button>
+          ))}
+        </div>
+        <div className={css.gitBranchTools}>
+          <button type="button" className={css.gitLink} disabled={busy} onClick={() => { selectBranches(entry => entry.merged) }}>{t('branchSelectMerged')}</button>
+          {branchTab === 'local' && (
+            <button type="button" className={css.gitLink} disabled={busy} onClick={() => { selectBranches(entry => entry.gone) }}>{t('branchSelectGone')}</button>
+          )}
+          <button type="button" className={css.gitLink} disabled={busy || branchSelection.size === 0} onClick={() => { setBranchSelection(new Set()) }}>{t('branchSelectNone')}</button>
+          {branchTab === 'remote' && (
+            <button type="button" className={css.gitLink} disabled={busy || branchOverview?.remote === undefined} onClick={pruneRemoteBranches}>{t('branchPrune')}</button>
+          )}
+        </div>
+        {branchTab === 'local' && (
+          <label className={css.gitBranchForce}>
+            <input type="checkbox" checked={branchForce} disabled={busy} onChange={(event) => { setBranchForce(event.target.checked) }} />
+            <span>{t('branchForce')}</span>
+          </label>
+        )}
+        {branchTab === 'remote' && branchOverview !== null && branchOverview.remote === undefined && (
+          <p className={css.gitWorktreeHint}>{t('branchNoRemote')}</p>
+        )}
+        {branchManagerError !== null && <div className={css.gitError}>{branchManagerError}</div>}
+        <div className={css.gitBranchList}>
+          {branchOverview !== null && branchRows.length === 0 && <p className={css.gitWorktreeHint}>{t('branchEmpty')}</p>}
+          {branchRows.map(entry => (
+            <label key={entry.name} className={css.gitBranchRow}>
+              <input
+                type="checkbox"
+                checked={branchSelection.has(entry.name)}
+                disabled={busy || entry.current}
+                onChange={() => {
+                  setBranchSelection((current) => {
+                    const next = new Set(current)
+                    if (next.has(entry.name)) next.delete(entry.name)
+                    else next.add(entry.name)
+                    return next
+                  })
+                }}
+              />
+              <span className={css.gitBranchRowMain}>
+                <span className={css.gitBranchRowLine}>
+                  <span className={css.gitBranchName} title={entry.name}>{entry.name}</span>
+                  {entry.current && <span className={css.gitBranchBadge}>{t('branchCurrentBadge')}</span>}
+                  {entry.merged && <span className={css.gitBranchBadge}>{t('branchMerged')}</span>}
+                  {entry.gone && <span className={css.gitBranchBadgeWarn}>{t('branchGone')}</span>}
+                  {(entry.ahead > 0 || entry.behind > 0) && <span className={css.gitBranchBadge}>{`↑${entry.ahead} ↓${entry.behind}`}</span>}
+                </span>
+                <span className={css.gitWorktreePath}>{`${entry.date} ${entry.subject}`}</span>
+              </span>
+            </label>
+          ))}
+        </div>
       </Modal>
     </div>
   )

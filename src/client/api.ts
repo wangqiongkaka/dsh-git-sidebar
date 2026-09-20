@@ -41,6 +41,38 @@ export interface GitTagEntry {
   remoteState: 'synced' | 'local' | 'unknown'
 }
 
+/** One branch row of the branch manager (local, or remote as `origin/name`). */
+export interface GitBranchEntry {
+  name: string
+  current: boolean
+  /** Reachable from HEAD, i.e. safe to delete. */
+  merged: boolean
+  /** Configured upstream (`origin/main`); absent when the branch tracks nothing. */
+  upstream?: string
+  /** Upstream configured but deleted on the remote. */
+  gone: boolean
+  ahead: number
+  behind: number
+  /** Last commit date, e.g. 2024-01-01. */
+  date: string
+  subject: string
+}
+
+/** One failed branch deletion inside a batch. */
+export interface GitBranchFailure {
+  name: string
+  message: string
+}
+
+/** Branch manager snapshot. */
+export interface GitBranchOverview {
+  current: string
+  /** Preferred remote name; absent when the repository has no remote. */
+  remote?: string
+  local: GitBranchEntry[]
+  remotes: GitBranchEntry[]
+}
+
 /** One git log row. */
 export interface GitLogEntry {
   /** Short hash (7+ chars, display). */
@@ -168,9 +200,20 @@ export const api = {
   /** Create a branch at a commit (no switch). */
   gitBranchCreate: (scope: SessionScope, name: string, commit: string) =>
     call<{ ok: true }>('git.branch-create', scopePayload(scope, { name, commit })),
-  /** Delete a merged local branch. */
-  gitBranchDelete: (scope: SessionScope, name: string) =>
-    call<{ ok: true }>('git.branch-delete', scopePayload(scope, { name })),
+  /** Local and remote branches with their merged/upstream state. */
+  gitBranchList: (scope: SessionScope, signal?: AbortSignal) =>
+    call<GitBranchOverview>('git.branch-list', scopePayload(scope, {}), signal),
+  /** Delete branches in one batch; `remote` deletes them on their remote instead.
+   *  Never throws for a single bad branch — the failures come back per name. */
+  gitBranchDelete: (scope: SessionScope, names: string[], options: { remote?: boolean; force?: boolean } = {}) =>
+    call<{ failed: GitBranchFailure[] }>('git.branch-delete', scopePayload(scope, {
+      names,
+      ...(options.remote === true ? { remote: true } : {}),
+      ...(options.force === true ? { force: true } : {}),
+    })),
+  /** Drop remote-tracking refs whose branch is gone on the remote. */
+  gitBranchPrune: (scope: SessionScope) =>
+    call<{ ok: true }>('git.branch-prune', scopePayload(scope, {})),
   /** Patch between two revisions (left side = merge-base when `mergeBase`). */
   gitRangeDiff: (scope: SessionScope, from: string, to: string, mergeBase: boolean, signal?: AbortSignal) =>
     call<{ diff: string }>('git.range-diff', scopePayload(scope, { from, to, mergeBase }), signal),

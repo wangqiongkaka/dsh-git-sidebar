@@ -1040,3 +1040,110 @@
   color: var(--dsw-alias-label-caption);
   font: var(--dsw-font-xs-13);
 }
+
+/* Branch manager (local / remote lists inside the branch modal). */
+.gitBranchTabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.gitBranchTab,
+.gitBranchTabActive {
+  padding: 4px 10px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-xxs-12);
+  cursor: pointer;
+}
+
+.gitBranchTab:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.gitBranchTabActive {
+  border-color: transparent;
+  background: var(--dsw-alias-brand-primary);
+  color: var(--dsw-alias-label-inverse);
+}
+
+.gitBranchTools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.gitBranchForce {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-xxs-12);
+  cursor: pointer;
+}
+
+.gitBranchList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: min(360px, 50vh);
+  overflow-y: auto;
+}
+
+.gitBranchRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.gitBranchRow:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.gitBranchRowMain {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+  padding: 4px 0;
+}
+
+.gitBranchRowLine {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.gitBranchName {
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-xxs-12);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gitBranchBadge,
+.gitBranchBadgeWarn {
+  flex: none;
+  padding: 0 5px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-xxxs-11);
+  white-space: nowrap;
+}
+
+.gitBranchBadgeWarn {
+  border-color: var(--dsw-alias-state-warn-label);
+  color: var(--dsw-alias-state-warn-label);
+}

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
-import { api, type GitLogEntry, type GitStashEntry, type GitStatusResult, type GitTagEntry } from '../src/client/api.ts'
+import { api, type GitBranchOverview, type GitLogEntry, type GitStashEntry, type GitStatusResult, type GitTagEntry } from '../src/client/api.ts'
 import { changeTree, GitView, listPathParts, resetViewMemory } from '../src/client/GitView.tsx'
 
 ;(globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -719,6 +719,84 @@ describe('GitView tags', () => {
         .filter(node => node.textContent?.includes('remote rejected'))
       expect(shown).toHaveLength(1)
       expect(tagSection(container).contains(shown[0]!)).toBe(true)
+    } finally {
+      act(() => { root.unmount() })
+      container.remove()
+    }
+  })
+})
+
+describe('GitView branch manager', () => {
+  const overview: GitBranchOverview = {
+    current: 'main',
+    remote: 'origin',
+    local: [
+      { name: 'main', current: true, merged: true, gone: false, ahead: 0, behind: 0, date: '2024-01-02', subject: 'base' },
+      { name: 'done', current: false, merged: true, gone: false, ahead: 0, behind: 0, date: '2024-01-01', subject: 'merged work' },
+      { name: 'wip', current: false, merged: false, gone: true, upstream: 'origin/wip', ahead: 1, behind: 0, date: '2024-01-03', subject: 'unmerged work' },
+    ],
+    remotes: [
+      { name: 'origin/done', current: false, merged: true, gone: false, ahead: 0, behind: 0, date: '2024-01-01', subject: 'merged work' },
+    ],
+  }
+
+  /** Open the "…" menu and the branch manager behind it. */
+  async function openBranchManager(): Promise<void> {
+    openMoreMenu()
+    const manage = menuItem('Manage branches…') ?? menuItem('分支管理…')
+    expect(manage).toBeDefined()
+    await act(async () => { manage!.click(); await Promise.resolve() })
+    await flush()
+  }
+
+  function labelled(...labels: string[]): HTMLButtonElement[] {
+    return [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .filter(button => labels.includes(button.textContent?.trim() ?? ''))
+  }
+
+  beforeEach(() => {
+    vi.spyOn(api, 'gitBranchList').mockResolvedValue(overview)
+  })
+
+  it('selects the merged local branches, deletes them in one batch and reports what git refused', async () => {
+    vi.spyOn(api, 'gitBranchDelete').mockResolvedValue({ failed: [{ name: 'done', message: 'not fully merged' }] })
+    const { container, root } = renderGitView()
+    try {
+      await flush()
+      await openBranchManager()
+      const boxes = [...document.querySelectorAll<HTMLInputElement>('[class*="gitBranchRow"] input')]
+      expect(boxes).toHaveLength(3)
+      // The current branch can never be part of a cleanup.
+      expect(boxes[0]!.disabled).toBe(true)
+
+      act(() => { labelled('Select merged', '选择已合并')[0]!.click() })
+      const deleteSelected = labelled('Delete selected (1)', '删除所选（1）')
+      expect(deleteSelected).toHaveLength(1)
+      act(() => { deleteSelected[0]!.click() })
+      await act(async () => { labelled('Delete', '删除').at(-1)!.click(); await Promise.resolve() })
+      await flush()
+
+      expect(api.gitBranchDelete).toHaveBeenCalledWith({ sessionId: 'session-1', cwd: '/repo' }, ['done'], { remote: false, force: false })
+      expect(container.textContent).toContain('not fully merged')
+    } finally {
+      act(() => { root.unmount() })
+      container.remove()
+    }
+  })
+
+  it('deletes the checked branches on the remote from the remote list', async () => {
+    vi.spyOn(api, 'gitBranchDelete').mockResolvedValue({ failed: [] })
+    const { container, root } = renderGitView()
+    try {
+      await flush()
+      await openBranchManager()
+      act(() => { labelled('Remote', '远程分支')[0]!.click() })
+      act(() => { labelled('Select merged', '选择已合并')[0]!.click() })
+      act(() => { labelled('Delete selected (1)', '删除所选（1）')[0]!.click() })
+      await act(async () => { labelled('Delete', '删除').at(-1)!.click(); await Promise.resolve() })
+      await flush()
+
+      expect(api.gitBranchDelete).toHaveBeenCalledWith({ sessionId: 'session-1', cwd: '/repo' }, ['origin/done'], { remote: true, force: false })
     } finally {
       act(() => { root.unmount() })
       container.remove()

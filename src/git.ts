@@ -69,6 +69,38 @@ export interface GitStashEntry {
   message: string
 }
 
+/** One branch row of the branch manager (local, or remote as `origin/name`). */
+export interface GitBranchEntry {
+  name: string
+  current: boolean
+  /** Reachable from HEAD, i.e. safe to delete. */
+  merged: boolean
+  /** Configured upstream (`origin/main`); absent when the branch tracks nothing. */
+  upstream?: string
+  /** Upstream configured but deleted on the remote (`[gone]`). */
+  gone: boolean
+  ahead: number
+  behind: number
+  /** Last commit date (`%(committerdate:short)`, e.g. 2024-01-01). */
+  date: string
+  subject: string
+}
+
+/** One failed branch deletion inside a batch. */
+export interface GitBranchFailure {
+  name: string
+  message: string
+}
+
+/** Branch manager snapshot. */
+export interface GitBranchOverview {
+  current: string
+  /** Preferred remote name; absent when the repository has no remote. */
+  remote?: string
+  local: GitBranchEntry[]
+  remotes: GitBranchEntry[]
+}
+
 export interface GitTagEntry {
   /** Tag name, e.g. 'v1.2.0'. */
   name: string
@@ -347,9 +379,97 @@ export async function branchCreate(cwd: string, name: string, commit: string): P
   await runGit(cwd, ['branch', name, commit])
 }
 
-/** Delete a fully merged local branch (`-d`; git refuses an unmerged one). */
-export async function branchDelete(cwd: string, name: string): Promise<void> {
-  await runGit(cwd, ['branch', '-d', name])
+/**
+ * Delete local branches (`-d`; `force` switches to `-D`, which also drops
+ * unmerged commits). One branch per call so a batch reports exactly which
+ * names failed instead of stopping at the first one.
+ */
+export async function branchDelete(cwd: string, names: string[], force = false): Promise<GitBranchFailure[]> {
+  const failures: GitBranchFailure[] = []
+  for (const name of names) {
+    try {
+      await runGit(cwd, ['branch', force ? '-D' : '-d', name])
+    } catch (error) {
+      failures.push({ name, message: error instanceof Error ? error.message : String(error) })
+    }
+  }
+  return failures
+}
+
+/**
+ * Delete branches on their remote (`git push <remote> --delete <branch>`).
+ * Each ref carries its remote as the first path segment, the way the panel
+ * lists it (`origin/feature`), so no remote has to be passed alongside.
+ * ponytail: one push per branch; batch them into a single push if deleting
+ * dozens at a time ever gets slow.
+ */
+export async function branchDeleteRemote(cwd: string, refs: string[]): Promise<GitBranchFailure[]> {
+  const remotes = (await runGit(cwd, ['remote'])).split('\n').filter(line => line !== '')
+  const failures: GitBranchFailure[] = []
+  for (const ref of refs) {
+    const remote = remotes.find(name => ref.startsWith(`${name}/`))
+    if (remote === undefined) {
+      failures.push({ name: ref, message: 'unknown remote' })
+      continue
+    }
+    try {
+      await runGit(cwd, ['push', remote, '--delete', ref.slice(remote.length + 1)], 120_000)
+    } catch (error) {
+      failures.push({ name: ref, message: error instanceof Error ? error.message : String(error) })
+    }
+  }
+  return failures
+}
+
+/** Drop remote-tracking refs whose branch no longer exists on the remote. */
+export async function branchPrune(cwd: string): Promise<void> {
+  const remote = await preferredRemote(cwd)
+  if (remote === undefined) throw new GitCommandError('no remote configured', 'git-error', 'branch prune')
+  await runGit(cwd, ['remote', 'prune', remote], 120_000)
+}
+
+/**
+ * Local and remote branches for the branch manager: what each branch tracks,
+ * whether its upstream is gone, and whether it is already merged into HEAD —
+ * the three things a cleanup decision needs. `for-each-ref` has no `-z`, but
+ * no field here can contain a newline.
+ */
+export async function branchOverview(cwd: string): Promise<GitBranchOverview> {
+  const format = '%(refname:strip=2)%1f%(upstream:short)%1f%(upstream:track)%1f%(committerdate:short)%1f%(contents:subject)'
+  const [current, remote, localRaw, remoteRaw, mergedRaw] = await Promise.all([
+    currentBranch(cwd).catch(() => 'HEAD'),
+    preferredRemote(cwd),
+    runGit(cwd, ['for-each-ref', '--sort=-committerdate', `--format=${format}`, 'refs/heads']),
+    runGit(cwd, ['for-each-ref', '--sort=-committerdate', `--format=${format}`, 'refs/remotes']),
+    // An unborn HEAD has nothing to compare against; nothing is merged then.
+    runGit(cwd, ['for-each-ref', '--merged', 'HEAD', '--format=%(refname:strip=2)', 'refs/heads', 'refs/remotes']).catch(() => ''),
+  ])
+  const merged = new Set(mergedRaw.split('\n').filter(line => line !== ''))
+  return {
+    current,
+    remote,
+    local: parseBranchRows(localRaw, merged, current),
+    // `origin/HEAD` is the remote's default-branch symref, not a branch to delete.
+    remotes: parseBranchRows(remoteRaw, merged, current).filter(entry => !entry.name.endsWith('/HEAD')),
+  }
+}
+
+/** Parse the `branchOverview` for-each-ref rows (exported for the unit test). */
+export function parseBranchRows(raw: string, merged: Set<string>, current: string): GitBranchEntry[] {
+  return raw.split('\n').filter(row => row !== '').map((row) => {
+    const [name = '', upstream = '', track = '', date = '', subject = ''] = row.split('\x1f')
+    return {
+      name,
+      current: name === current,
+      merged: merged.has(name),
+      ...(upstream === '' ? {} : { upstream }),
+      gone: track.includes('gone'),
+      ahead: Number(/ahead (\d+)/.exec(track)?.[1] ?? 0),
+      behind: Number(/behind (\d+)/.exec(track)?.[1] ?? 0),
+      date,
+      subject,
+    }
+  })
 }
 
 /**

@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
 import { alignDiffLines, parseUnifiedDiff } from '../src/client/DiffView.tsx'
 import { defaultWorktreeDraft } from '../src/client/GitView.tsx'
-import { branches, createTag, deleteTag, discard, discardAll, fastForward, parseLogLines, parsePorcelainZ, pushTag, rebase, resetToUpstream, stash, stashList, stashPop, status, tags, wipCommit, wipUndo } from '../src/git.ts'
+import { branchDelete, branchDeleteRemote, branchOverview, branchPrune, branches, createTag, deleteTag, discard, discardAll, fastForward, parseLogLines, parsePorcelainZ, pushTag, rebase, resetToUpstream, stash, stashList, stashPop, status, tags, wipCommit, wipUndo } from '../src/git.ts'
 
 describe('git worktree defaults', () => {
   it('creates a new branch draft based on the current branch', () => {
@@ -587,6 +587,77 @@ describe('tags', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
       rmSync(remote, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('branch manager', () => {
+  const gitRun = (cwd: string, args: string[]): string => {
+    const result = spawnSync('git', ['-C', cwd, ...args], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: 'dsh-better-sidebar-test',
+        GIT_AUTHOR_EMAIL: 'test@dsh.invalid',
+        GIT_COMMITTER_NAME: 'dsh-better-sidebar-test',
+        GIT_COMMITTER_EMAIL: 'test@dsh.invalid',
+      },
+    })
+    if (result.status !== 0) throw new Error(result.stderr || `git ${args[0] ?? ''} failed`)
+    return result.stdout
+  }
+
+  it('lists merged / gone state and cleans up local and remote branches in batches', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-sidebar-branches-'))
+    const remote = join(root, 'remote')
+    const local = join(root, 'local')
+    try {
+      mkdirSync(remote)
+      gitRun(remote, ['init', '-q', '-b', 'main'])
+      writeFileSync(join(remote, 'a.txt'), 'base\n')
+      gitRun(remote, ['add', '-A'])
+      gitRun(remote, ['commit', '-q', '-m', 'base'])
+      gitRun(remote, ['branch', 'feature'])
+      gitRun(remote, ['branch', 'doomed'])
+      gitRun(root, ['clone', '-q', remote, local])
+      // done: merged into main. wip: one unmerged commit. tracks-feature: an upstream about to disappear.
+      gitRun(local, ['branch', 'done'])
+      gitRun(local, ['checkout', '-q', '-b', 'wip'])
+      writeFileSync(join(local, 'b.txt'), 'wip\n')
+      gitRun(local, ['add', '-A'])
+      gitRun(local, ['commit', '-q', '-m', 'wip'])
+      gitRun(local, ['checkout', '-q', 'main'])
+      gitRun(local, ['branch', '--track', 'tracks-feature', 'origin/feature'])
+
+      const overview = await branchOverview(local)
+      expect(overview).toMatchObject({ current: 'main', remote: 'origin' })
+      expect(overview.local.map(entry => entry.name).sort()).toEqual(['done', 'main', 'tracks-feature', 'wip'])
+      expect(overview.local.find(entry => entry.name === 'main')).toMatchObject({ current: true, merged: true })
+      expect(overview.local.find(entry => entry.name === 'done')).toMatchObject({ current: false, merged: true, gone: false })
+      expect(overview.local.find(entry => entry.name === 'wip')).toMatchObject({ merged: false })
+      expect(overview.local.find(entry => entry.name === 'tracks-feature')).toMatchObject({ upstream: 'origin/feature', gone: false })
+      expect(overview.remotes.map(entry => entry.name)).toContain('origin/feature')
+      expect(overview.remotes.some(entry => entry.name.endsWith('/HEAD'))).toBe(false)
+
+      // A batch keeps going past the unmerged branch and reports it by name.
+      expect((await branchDelete(local, ['done', 'wip'])).map(entry => entry.name)).toEqual(['wip'])
+      expect((await branches(local)).names).not.toContain('done')
+      expect(await branchDelete(local, ['wip'], true)).toEqual([])
+      expect((await branches(local)).names).not.toContain('wip')
+
+      expect(await branchDeleteRemote(local, ['origin/doomed'])).toEqual([])
+      expect(gitRun(remote, ['branch', '--list', 'doomed']).trim()).toBe('')
+      expect((await branchDeleteRemote(local, ['nowhere/x']))[0]).toMatchObject({ name: 'nowhere/x' })
+
+      // The remote drops a branch behind our back: prune clears the stale ref
+      // and the branch tracking it turns up as [gone].
+      gitRun(remote, ['branch', '-D', 'feature'])
+      await branchPrune(local)
+      const pruned = await branchOverview(local)
+      expect(pruned.remotes.map(entry => entry.name)).not.toContain('origin/feature')
+      expect(pruned.local.find(entry => entry.name === 'tracks-feature')).toMatchObject({ gone: true })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
     }
   })
 })

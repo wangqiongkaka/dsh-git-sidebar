@@ -52,6 +52,13 @@ function requireRevision(payload: unknown, key: string): string {
   return value
 }
 
+/** A non-empty list of revisions (the batch branch operations take one). */
+function requireRevisionList(payload: unknown, key: string): string[] {
+  const value = (payload as Record<string, unknown>)[key]
+  if (!Array.isArray(value) || value.length === 0) throw new SidebarError('bad-request', `expected a non-empty "${key}" list`)
+  return value.map(item => requireRevision({ [key]: item }, key))
+}
+
 function requireGitOperation(payload: unknown): git.GitOperation {
   const operation = requireString(payload, 'operation')
   if (operation !== 'merge' && operation !== 'rebase') throw new SidebarError('bad-request', 'invalid git operation')
@@ -277,9 +284,22 @@ export function buildApi(
       await git.branchCreate(cwd, requireRevision(payload, 'name'), requireCommitHash(payload, 'commit'))
       return { ok: true }
     },
+    'git.branch-list': async (payload) => {
+      const { cwd } = cwdOf(payload)
+      return git.branchOverview(cwd)
+    },
     'git.branch-delete': async (payload) => {
       const { cwd } = cwdOf(payload)
-      await git.branchDelete(cwd, requireRevision(payload, 'name'))
+      const record = payload as { remote?: unknown; force?: unknown }
+      const names = requireRevisionList(payload, 'names')
+      const failed = record.remote === true
+        ? await git.branchDeleteRemote(cwd, names)
+        : await git.branchDelete(cwd, names, record.force === true)
+      return { failed }
+    },
+    'git.branch-prune': async (payload) => {
+      const { cwd } = cwdOf(payload)
+      await git.branchPrune(cwd)
       return { ok: true }
     },
     'git.range-diff': async (payload) => {

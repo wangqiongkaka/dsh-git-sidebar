@@ -58,9 +58,12 @@ it('keeps failures explicit and rejects cross-site requests and option injection
   for (const [method, payload] of [
     ['git.checkout', { branch: '--orphan=bad' }], ['git.revert', { hash: '--all' }],
     ['git.stash-drop', { ref: '--all' }], ['git.tag-create', { name: '-bad' }],
-    ['git.branch-create', { name: '-D', commit: 'a'.repeat(40) }], ['git.branch-delete', { name: '--force' }],
+    ['git.branch-create', { name: '-D', commit: 'a'.repeat(40) }], ['git.branch-delete', { names: ['--force'] }],
+    ['git.branch-delete', { names: ['ok', '--exec=touch /tmp/x'], remote: true }], ['git.branch-delete', { names: [] }],
     ['git.range-diff', { from: '--output=/tmp/x', to: 'HEAD' }],
   ] as const) expect((await call(method, payload)).status).toBe(400)
+  expect((await call('git.branch-list')).body.value.local[0]).toMatchObject({ name: 'main', current: true })
+  expect((await call('git.branch-prune')).body.ok).toBe(false)
   expect((await call('git.commit', { message: 'nothing staged' })).body.ok).toBe(false)
   expect((await call('git.wip-undo')).body.ok).toBe(false)
   expect((await call('git.reset-to-upstream')).body.ok).toBe(false)
