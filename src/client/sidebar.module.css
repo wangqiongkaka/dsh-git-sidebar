@@ -429,6 +429,8 @@
 
 .gitError {
   padding: 8px 12px;
+  max-height: 30vh;
+  overflow-y: auto;
   font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-state-error-primary);
   white-space: pre-wrap;
@@ -623,6 +625,8 @@
 
 .gitConfirmDesc {
   margin: 0;
+  max-height: 40vh;
+  overflow-y: auto;
   font: var(--dsw-font-s-14);
   color: var(--dsw-alias-label-primary);
   white-space: pre-wrap;
@@ -1063,10 +1067,12 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+/* The filled pair the commit button uses: readable in both themes
+   (brand-primary + label-inverse renders black on black in the light one). */
 .gitBranchTabActive {
   border-color: transparent;
-  background: var(--dsw-alias-brand-primary);
-  color: var(--dsw-alias-label-inverse);
+  background: var(--dsw-alias-button-info-fill);
+  color: var(--dsw-static-neutral-bluish-00);
 }
 
 .gitBranchTools {

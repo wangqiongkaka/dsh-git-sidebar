@@ -113,6 +113,18 @@ function isUntracked(entry: GitStatusEntry): boolean {
  * no version in HEAD, so discarding it deletes it instead of restoring it —
  * the dialog has to say which of the two is about to happen.
  */
+/** How many branch names a confirm dialog or an error spells out; the rest
+ *  collapse into a count, so cleaning up a hundred branches cannot grow the
+ *  dialog past the screen. */
+const NAME_PREVIEW = 8
+
+/** `a, b, c 等 N 个` — the name list a confirm dialog shows. */
+export function previewNames(names: string[]): string {
+  return names.length <= NAME_PREVIEW
+    ? names.join(', ')
+    : `${names.slice(0, NAME_PREVIEW).join(', ')} ${t('branchNamesMore', { count: names.length - NAME_PREVIEW })}`
+}
+
 function discardPrompt(entry: GitStatusEntry): { title: string; description: string } {
   const added = badgeOf(entry) === 'A' || isUntracked(entry)
   return {
@@ -811,7 +823,10 @@ export function GitView(props: {
     setBranchManagerOpen(false)
     runConfirmed({
       title: t(remote ? 'branchDeleteRemoteTitle' : 'branchDeleteLocalTitle'),
-      description: t(remote ? 'branchDeleteRemoteDesc' : force ? 'branchDeleteForceDesc' : 'branchDeleteLocalDesc', { names: names.join(', ') }),
+      description: t(remote ? 'branchDeleteRemoteDesc' : force ? 'branchDeleteForceDesc' : 'branchDeleteLocalDesc', {
+        count: names.length,
+        names: previewNames(names),
+      }),
       confirmLabel: t('branchDeleteConfirm'),
       onConfirm: async () => {
         const { failed } = await api.gitBranchDelete(scope, names, { remote, force })
@@ -820,7 +835,9 @@ export function GitView(props: {
           // runConfirmed skips its refresh once this throws, but the branches
           // that DID get deleted are already gone from the panel's data.
           await refresh()
-          throw new Error(failed.map(entry => `${entry.name}: ${entry.message}`).join('\n'))
+          const lines = failed.slice(0, NAME_PREVIEW).map(entry => `${entry.name}: ${entry.message}`)
+          if (failed.length > NAME_PREVIEW) lines.push(t('branchDeleteFailedMore', { count: failed.length - NAME_PREVIEW }))
+          throw new Error(lines.join('\n'))
         }
       },
     })

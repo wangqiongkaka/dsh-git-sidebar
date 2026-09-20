@@ -4,7 +4,7 @@ import { createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
 import { api, type GitBranchOverview, type GitLogEntry, type GitStashEntry, type GitStatusResult, type GitTagEntry } from '../src/client/api.ts'
-import { changeTree, GitView, listPathParts, resetViewMemory } from '../src/client/GitView.tsx'
+import { changeTree, GitView, listPathParts, previewNames, resetViewMemory } from '../src/client/GitView.tsx'
 
 ;(globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -726,6 +726,16 @@ describe('GitView tags', () => {
   })
 })
 
+describe('branch name previews', () => {
+  it('spells out a short list and collapses a long one into a count', () => {
+    expect(previewNames(['a', 'b'])).toBe('a, b')
+    const long = previewNames(Array.from({ length: 11 }, (_, index) => `b${index}`))
+    expect(long).toContain('b7')
+    expect(long).not.toContain('b8')
+    expect(long).toMatch(/3/)
+  })
+})
+
 describe('GitView branch manager', () => {
   const overview: GitBranchOverview = {
     current: 'main',
@@ -778,6 +788,32 @@ describe('GitView branch manager', () => {
 
       expect(api.gitBranchDelete).toHaveBeenCalledWith({ sessionId: 'session-1', cwd: '/repo' }, ['done'], { remote: false, force: false })
       expect(container.textContent).toContain('not fully merged')
+    } finally {
+      act(() => { root.unmount() })
+      container.remove()
+    }
+  })
+
+  it('keeps a long selection out of the confirm dialog, spelling out the count instead', async () => {
+    const many = Array.from({ length: 12 }, (_, index) => ({
+      name: `b${String(index + 1).padStart(2, '0')}`,
+      current: false, merged: true, gone: false, ahead: 0, behind: 0, date: '2024-01-01', subject: 'merged work',
+    }))
+    vi.mocked(api.gitBranchList).mockResolvedValue({ ...overview, local: [overview.local[0]!, ...many] })
+    vi.spyOn(api, 'gitBranchDelete').mockResolvedValue({ failed: [] })
+    const { container, root } = renderGitView()
+    try {
+      await flush()
+      await openBranchManager()
+      act(() => { labelled('Select merged', '选择已合并')[0]!.click() })
+      act(() => { labelled('Delete selected (12)', '删除所选（12）')[0]!.click() })
+
+      const dialog = document.body.textContent ?? ''
+      // The first names still show; the tail collapses into a count.
+      expect(dialog).toContain('b01')
+      expect(dialog).toContain('b08')
+      expect(dialog).not.toContain('b09')
+      expect(dialog).not.toContain('b12')
     } finally {
       act(() => { root.unmount() })
       container.remove()
