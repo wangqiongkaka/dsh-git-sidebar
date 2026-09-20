@@ -2,6 +2,10 @@
 
 DSH 右侧边栏的 Git 源代码管理插件。React 18 + TypeScript，Cordis 插件体系，pnpm 管理。
 
+## 宿主边界
+
+禁止修改 DSH 宿主源码、构建产物及依赖或符号链接中的宿主文件（`../../deepseek-harness/` 源码与 `lib/`、本仓库 `node_modules/` 中 `link:` 指向的宿主包、`~/.dsh/profiles/*/node_modules/` 下的已安装文件）；对宿主仅允许只读调查，问题的修复一律在本插件内实现。宿主缺少必要能力时，说明缺口和可行的替代方案，由用户决定是否去宿主侧处理。
+
 ## 目录
 
 - `src/index.ts`：Node 端，注册 `/git-sidebar/api/*` 路由；每个路由先校验参数再调 `src/git.ts`。
