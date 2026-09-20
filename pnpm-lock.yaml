@@ -45,9 +45,6 @@ importers:
       '@deepseek-ai/dsh-client-ui-workspace':
         specifier: link:../../deepseek-harness/packages/client/ui-workspace
         version: link:../../deepseek-harness/packages/client/ui-workspace
-      '@deepseek-ai/dsh-native-command':
-        specifier: link:../../deepseek-harness/packages/util/native-command
-        version: link:../../deepseek-harness/packages/util/native-command
       '@deepseek-ai/dsh-util-workspace-path':
         specifier: link:../../deepseek-harness/packages/util/workspace-path
         version: link:../../deepseek-harness/packages/util/workspace-path

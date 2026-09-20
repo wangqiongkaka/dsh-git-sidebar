@@ -9,8 +9,6 @@ import type { Context } from '../src/context-types.ts'
 
 let root: string
 let url: string
-/** Every path the injected opener was handed (the real one would launch a browser). */
-const launched: string[] = []
 const server = createServer()
 const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim()
 async function call(method: string, payload: Record<string, unknown> = {}) {
@@ -36,11 +34,7 @@ beforeAll(async () => {
       return () => server.off('request', route.handler)
     } },
   } as unknown as Context
-  apply(ctx, { readLimit: 1024 }, async (path) => {
-    launched.push(path)
-    // A host that cannot launch must surface it, never report a silent success.
-    if (path.endsWith('broken.html')) throw new Error('no browser here')
-  })
+  apply(ctx, { readLimit: 1024 })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
   const address = server.address()
   if (address === null || typeof address === 'string') throw new Error('no port')
@@ -76,27 +70,4 @@ it('keeps failures explicit and rejects cross-site requests and option injection
   const response = await fetch(`${url}/git-sidebar/api/git.status`, { method: 'POST', headers: { origin: 'https://example.invalid' }, body: '{}' })
   expect(response.status).toBe(403)
   expect(await readFile(join(root, 'file.txt'), 'utf8')).toBe('changed\n')
-})
-it('opens an HTML change row in the desktop browser and refuses every other path', async () => {
-  await writeFile(join(root, 'page.html'), '<!doctype html><h1>change design</h1>\n')
-  await writeFile(join(root, 'sub', 'page.HTM'), '<h1>nested</h1>\n')
-  expect((await call('fs.open-in-browser', { path: 'page.html' })).status).toBe(200)
-  // The suffix match is case-insensitive, and a repo-relative path from a
-  // session cwd below the root still reaches the file.
-  expect((await call('fs.open-in-browser', { path: 'sub/page.HTM' })).status).toBe(200)
-  expect(launched).toEqual([join(root, 'page.html'), join(root, 'sub', 'page.HTM')])
-
-  // Only an existing HTML file is launched: a text change, a missing document,
-  // a directory named like a page, and a non-string path all stop at the edge.
-  await mkdir(join(root, 'dir.html'))
-  for (const payload of [{ path: 'file.txt' }, { path: 'missing.html' }, { path: 'dir.html' }, { path: 42 }] as const) {
-    expect((await call('fs.open-in-browser', payload as Record<string, unknown>)).status).toBe(400)
-  }
-  expect(launched).toEqual([join(root, 'page.html'), join(root, 'sub', 'page.HTM')])
-
-  // A failed launch is reported as a failure, with the host's own message.
-  await writeFile(join(root, 'broken.html'), '<h1>broken</h1>\n')
-  const failure = await call('fs.open-in-browser', { path: 'broken.html' })
-  expect(failure.status).toBe(500)
-  expect(failure.body.error.message).toBe('no browser here')
 })

@@ -177,7 +177,6 @@ export const zh = {
   loadMore: '加载更多',
   historyLoadError: '加载更多历史失败',
   openEditor: '打开编辑器',
-  openInBrowser: '在浏览器中打开',
   copyRelative: '复制相对地址',
   copyAbsolute: '复制绝对地址',
 }
@@ -359,7 +358,6 @@ export const en = {
   loadMore: 'Load more',
   historyLoadError: 'Failed to load more history',
   openEditor: 'Open editor',
-  openInBrowser: 'Open in browser',
   copyRelative: 'Copy relative path',
   copyAbsolute: 'Copy absolute path',
 }
