@@ -302,6 +302,27 @@ describe('GitView change groups', () => {
     }
   })
 
+  it('offers discard-all as a shortcut in the changes header, behind the same confirm', async () => {
+    const { container, root } = renderGitView()
+    try {
+      await flush()
+      const shortcut = [...container.querySelectorAll<HTMLButtonElement>('button')]
+        .find(button => button.textContent?.trim() === 'Discard all' || button.textContent?.trim() === '放弃全部')
+      expect(shortcut).toBeDefined()
+      expect(shortcut!.disabled).toBe(false)
+      act(() => { shortcut!.click() })
+      // No menu was opened: the only long-label button is the confirm modal's.
+      const confirm = discardButtons().at(-1)!
+      await act(async () => { confirm.click(); await Promise.resolve() })
+      await flush()
+
+      expect(api.gitDiscardAll).toHaveBeenCalledWith({ sessionId: 'session-1', cwd: '/repo' })
+    } finally {
+      act(() => { root.unmount() })
+      container.remove()
+    }
+  })
+
   it('keeps the current list and reports an error when discard-all fails', async () => {
     vi.mocked(api.gitDiscardAll).mockRejectedValue(new Error('discard failed'))
     const { container, root } = renderGitView()

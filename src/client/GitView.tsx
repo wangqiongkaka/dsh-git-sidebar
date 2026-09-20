@@ -802,6 +802,17 @@ export function GitView(props: {
     } })
   }
 
+  /** Discard every tracked change after the confirm modal (menu item and the
+   *  changes header's shortcut share it). */
+  const discardAllGuarded = (): void => {
+    runConfirmed({
+      title: t('discardAllTitle'),
+      description: t('discardAllDesc', { count: discardableCount }),
+      confirmLabel: t('discardAll'),
+      onConfirm: () => api.gitDiscardAll(scope),
+    })
+  }
+
   /** Open the branch manager with a clean selection. */
   const openBranchManager = (): void => {
     setBranchManagerError(null)
@@ -1076,14 +1087,7 @@ export function GitView(props: {
               })
             }
             if (id === 'tag-new') { setTagDraftError(null); setTagDraft({ commit: null, name: '', message: '' }) }
-            if (id === 'discard-all') {
-              runConfirmed({
-                title: t('discardAllTitle'),
-                description: t('discardAllDesc', { count: discardableCount }),
-                confirmLabel: t('discardAll'),
-                onConfirm: () => api.gitDiscardAll(scope),
-              })
-            }
+            if (id === 'discard-all') discardAllGuarded()
             if (id === 'branch-manage') openBranchManager()
             if (id === 'merge') setMergeSource(branch)
             if (id === 'rebase') setRebaseTarget(branch)
@@ -1148,6 +1152,7 @@ export function GitView(props: {
               </button>
               {entries.length > 0 && (
                 <span className={css.gitSectionActions}>
+                  <button type="button" className={`${css.gitLink} ${css.gitLinkDanger}`} disabled={busy || discardableCount === 0} onClick={discardAllGuarded}>{t('discardAllShort')}</button>
                   <button type="button" className={css.gitLink} disabled={busy} onClick={() => { void stageAll(allStaged) }}>{allStaged ? t('unstageAll') : t('stageAll')}</button>
                   <button type="button" className={css.gitLink} onClick={() => { setChangeView(current => current === 'tree' ? 'list' : 'tree') }}>{t(changeView === 'tree' ? 'showAsList' : 'showAsTree')}</button>
                 </span>

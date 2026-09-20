@@ -280,6 +280,10 @@
   padding: 0;
 }
 
+.gitLinkDanger {
+  color: var(--dsw-alias-state-error-primary);
+}
+
 .gitLink:hover:not(:disabled) {
   text-decoration: underline;
 }
