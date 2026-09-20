@@ -108,6 +108,19 @@ function isUntracked(entry: GitStatusEntry): boolean {
   return badgeOf(entry) === '?'
 }
 
+/**
+ * The confirmation copy for discarding one row. A file this change added has
+ * no version in HEAD, so discarding it deletes it instead of restoring it —
+ * the dialog has to say which of the two is about to happen.
+ */
+function discardPrompt(entry: GitStatusEntry): { title: string; description: string } {
+  const added = badgeOf(entry) === 'A' || isUntracked(entry)
+  return {
+    title: t(added ? 'discardNewTitle' : 'discardTitle'),
+    description: t(added ? 'discardNewDesc' : 'discardDesc', { path: entry.path }),
+  }
+}
+
 const GRAPH_LANE = 14
 const GRAPH_ROW = 32
 const GRAPH_COLORS = ['#2f6fdb', '#d0741c', '#2a9d5c', '#b84bd6', '#d63b5f', '#1f9fb5']
@@ -857,8 +870,7 @@ export function GitView(props: {
               disabled={busy}
               onClick={() => {
                 runConfirmed({
-                  title: t('discardTitle'),
-                  description: t('discardDesc', { path: entry.path }),
+                  ...discardPrompt(entry),
                   confirmLabel: t('discard'),
                   onConfirm: () => api.gitDiscard(scope, entry.path),
                 })
@@ -1265,8 +1277,7 @@ export function GitView(props: {
               }
               if (id === 'discard') {
                 runConfirmed({
-                  title: t('discardTitle'),
-                  description: t('discardDesc', { path: target.entry.path }),
+                  ...discardPrompt(target.entry),
                   confirmLabel: t('discard'),
                   onConfirm: () => api.gitDiscard(scope, target.entry.path),
                 })

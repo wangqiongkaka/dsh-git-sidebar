@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
 import { alignDiffLines, parseUnifiedDiff } from '../src/client/DiffView.tsx'
 import { defaultWorktreeDraft } from '../src/client/GitView.tsx'
-import { branches, createTag, deleteTag, discardAll, fastForward, parseLogLines, parsePorcelainZ, pushTag, rebase, resetToUpstream, stash, stashList, stashPop, status, tags, wipCommit, wipUndo } from '../src/git.ts'
+import { branches, createTag, deleteTag, discard, discardAll, fastForward, parseLogLines, parsePorcelainZ, pushTag, rebase, resetToUpstream, stash, stashList, stashPop, status, tags, wipCommit, wipUndo } from '../src/git.ts'
 
 describe('git worktree defaults', () => {
   it('creates a new branch draft based on the current branch', () => {
@@ -222,6 +222,47 @@ describe('discard all changes', () => {
         { path: 'loose.txt', xy: '??' },
         { path: 'staged-new.txt', xy: '??' },
       ])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  // WHY: `git checkout -- <path>` rewrites an addition from the index and
+  // reports success without changing anything, so discarding a new file used
+  // to do nothing at all. HEAD is what decides restore versus delete.
+  it('deletes a file HEAD does not carry and restores one it does', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-sidebar-discard-one-'))
+    try {
+      gitRun(dir, ['init', '-q'])
+      gitRun(dir, ['checkout', '-q', '-b', 'main'])
+      writeFileSync(join(dir, 'tracked.txt'), 'original\n')
+      gitRun(dir, ['add', '-A'])
+      gitRun(dir, ['commit', '-q', '-m', 'base'])
+
+      // A tracked file keeps its HEAD content and stays on disk.
+      writeFileSync(join(dir, 'tracked.txt'), 'edited\n')
+      await discard(dir, join(dir, 'tracked.txt'))
+      expect(readFileSync(join(dir, 'tracked.txt'), 'utf8')).toBe('original\n')
+
+      // A staged addition (`A `) is the case the report named.
+      writeFileSync(join(dir, 'added.txt'), 'new\n')
+      gitRun(dir, ['add', 'added.txt'])
+      await discard(dir, join(dir, 'added.txt'))
+      expect(existsSync(join(dir, 'added.txt'))).toBe(false)
+
+      // A staged addition edited afterwards (`AM`) must not block the delete.
+      writeFileSync(join(dir, 'edited.txt'), 'new\n')
+      gitRun(dir, ['add', 'edited.txt'])
+      writeFileSync(join(dir, 'edited.txt'), 'changed again\n')
+      await discard(dir, join(dir, 'edited.txt'))
+      expect(existsSync(join(dir, 'edited.txt'))).toBe(false)
+
+      // An untracked file the index never carried is removed just the same.
+      writeFileSync(join(dir, 'loose.txt'), 'never added\n')
+      await discard(dir, join(dir, 'loose.txt'))
+      expect(existsSync(join(dir, 'loose.txt'))).toBe(false)
+
+      expect((await status(dir)).entries).toEqual([])
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

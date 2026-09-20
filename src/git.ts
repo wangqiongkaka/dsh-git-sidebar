@@ -11,6 +11,7 @@
  */
 import { spawn } from 'node:child_process'
 import { existsSync, realpathSync } from 'node:fs'
+import { rm } from 'node:fs/promises'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 
 export type GitOperation = 'merge' | 'rebase'
@@ -468,9 +469,29 @@ export async function commitDiff(cwd: string, hash: string): Promise<string> {
   return runGit(cwd, ['show', '--no-ext-diff', '--no-color', '--format=', '-m', '--first-parent', hash])
 }
 
-/** Discard the worktree changes of one path (`git checkout -- <path>`; the index is untouched). */
+/** Whether HEAD carries this path; an unborn HEAD carries nothing. */
+async function inHead(cwd: string, path: string): Promise<boolean> {
+  const listed = await runGit(cwd, ['ls-tree', '-z', 'HEAD', '--', path]).catch(() => '')
+  return listed !== ''
+}
+
+/**
+ * Discard one path's worktree changes. A path HEAD carries is restored from
+ * the index (`git checkout -- <path>`, which leaves the index untouched). A
+ * path HEAD does not carry has no baseline to restore: it is a file the change
+ * being discarded created, so discarding it removes the file. `git checkout`
+ * is wrong there — the index holds the addition, so it would rewrite the file
+ * from the index and report success without changing anything.
+ */
 export async function discard(cwd: string, path: string): Promise<void> {
-  await runGit(cwd, ['checkout', '--', path])
+  if (await inHead(cwd, path)) {
+    await runGit(cwd, ['checkout', '--', path])
+    return
+  }
+  // -f covers an addition already edited or deleted in the worktree;
+  // --ignore-unmatch covers a path the index never carried (untracked).
+  await runGit(cwd, ['rm', '-q', '-f', '--ignore-unmatch', '--', path])
+  await rm(path, { force: true })
 }
 
 /**
