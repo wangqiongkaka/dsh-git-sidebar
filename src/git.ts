@@ -615,21 +615,13 @@ export async function discard(cwd: string, path: string): Promise<void> {
 }
 
 /**
- * Discard every tracked index/worktree change while preserving untracked
- * files. Resetting the index first intentionally turns staged additions into
- * untracked files; checkout then restores only paths that exist in HEAD.
+ * Discard index/worktree changes and remove untracked files and directories.
+ * Ignored files and nested repositories are not cleaned.
  */
 export async function discardAll(cwd: string): Promise<void> {
   const root = await repoRoot(cwd)
-  await runGit(root, ['reset', '-q'])
-  try {
-    await runGit(root, ['rev-parse', '-q', '--verify', 'HEAD'])
-  } catch {
-    // An unborn repository has no tracked baseline to restore. The reset above
-    // already converted every staged addition back to an untracked file.
-    return
-  }
-  await runGit(root, ['checkout', '--', '.'])
+  await runGit(root, ['reset', '--hard'])
+  await runGit(root, ['clean', '-fd'])
 }
 
 /** Revert one commit onto the current branch with an auto-generated message. */

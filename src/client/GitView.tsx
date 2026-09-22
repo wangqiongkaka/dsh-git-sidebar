@@ -802,7 +802,7 @@ export function GitView(props: {
     } })
   }
 
-  /** Discard every tracked change after the confirm modal (menu item and the
+  /** Discard every change after the confirm modal (menu item and the
    *  changes header's shortcut share it). */
   const discardAllGuarded = (): void => {
     runConfirmed({
@@ -922,7 +922,7 @@ export function GitView(props: {
       onConfirm: () => api.gitPush(scope),
     })
   }
-  const discardableCount = new Set(entries.filter(entry => !isUntracked(entry)).map(entry => entry.path)).size
+  const discardableCount = new Set(entries.map(entry => entry.path)).size
 
   const toggleSection = (section: keyof typeof expandedSections): void => {
     setExpandedSections(current => ({ ...current, [section]: !current[section] }))

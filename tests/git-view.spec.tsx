@@ -270,10 +270,10 @@ describe('GitView change groups', () => {
     }
   })
 
-  it('confirms discard-all, refreshes on success, and keeps untracked files visible', async () => {
+  it('confirms discard-all and clears all changes on success', async () => {
     const cleanTracked: GitStatusResult = {
       ...dirtyStatus,
-      entries: [{ path: 'new.ts', xy: '??' }],
+      entries: [],
     }
     vi.mocked(api.gitStatus).mockResolvedValueOnce(dirtyStatus).mockResolvedValue(cleanTracked)
     const { container, root } = renderGitView()
@@ -282,8 +282,8 @@ describe('GitView change groups', () => {
       openMoreMenu()
       expect(discardButtons()).toHaveLength(1)
       act(() => { discardButtons()[0]!.click() })
-      expect(document.body.textContent).toContain('2')
-      expect(document.body.textContent).toMatch(/Untracked files will be kept|未跟踪文件将保留/)
+      expect(document.body.textContent).toMatch(/Discard all 3 uncommitted changes|放弃全部 3 项未提交更改/)
+      expect(document.body.textContent).toMatch(/delete added and untracked files|删除已 Add 和未 Add 的新增文件/)
 
       const confirm = discardButtons().at(-1)!
       await act(async () => { confirm.click(); await Promise.resolve() })
@@ -293,7 +293,7 @@ describe('GitView change groups', () => {
       expect(api.gitStatus).toHaveBeenCalledTimes(2)
       expect(container.textContent).not.toContain('staged.ts')
       expect(container.textContent).not.toContain('unstaged.ts')
-      expect(container.textContent).toContain('new.ts')
+      expect(container.textContent).not.toContain('new.ts')
       openMoreMenu()
       expect(discardButtons()[0]!.disabled).toBe(true)
     } finally {
@@ -303,6 +303,7 @@ describe('GitView change groups', () => {
   })
 
   it('offers discard-all as a shortcut in the changes header, behind the same confirm', async () => {
+    vi.mocked(api.gitStatus).mockResolvedValue({ ...dirtyStatus, entries: [{ path: 'new.ts', xy: '??' }] })
     const { container, root } = renderGitView()
     try {
       await flush()

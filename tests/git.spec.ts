@@ -192,7 +192,7 @@ describe('discard all changes', () => {
     return result.stdout
   }
 
-  it('restores tracked files from a nested cwd while preserving untracked files', async () => {
+  it('discards all changes from a nested cwd while preserving ignored files', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'dsh-sidebar-discard-all-'))
     try {
       gitRun(dir, ['init', '-q'])
@@ -210,18 +210,45 @@ describe('discard all changes', () => {
       writeFileSync(join(dir, 'staged-new.txt'), 'keep staged addition\n')
       gitRun(dir, ['add', 'staged-new.txt'])
       writeFileSync(join(dir, 'loose.txt'), 'keep untracked\n')
+      writeFileSync(join(dir, '.git', 'info', 'exclude'), 'ignored.txt\n')
+      writeFileSync(join(dir, 'ignored.txt'), 'keep ignored\n')
 
       await discardAll(join(dir, 'nested'))
 
       expect(readFileSync(join(dir, 'a.txt'), 'utf8')).toBe('original a\n')
       expect(readFileSync(join(dir, 'nested', 'b.txt'), 'utf8')).toBe('original b\n')
-      expect(readFileSync(join(dir, 'staged-new.txt'), 'utf8')).toBe('keep staged addition\n')
-      expect(readFileSync(join(dir, 'loose.txt'), 'utf8')).toBe('keep untracked\n')
-      expect(existsSync(join(dir, 'staged-new.txt'))).toBe(true)
-      expect((await status(dir)).entries).toEqual([
-        { path: 'loose.txt', xy: '??' },
-        { path: 'staged-new.txt', xy: '??' },
-      ])
+      expect(existsSync(join(dir, 'staged-new.txt'))).toBe(false)
+      expect(existsSync(join(dir, 'loose.txt'))).toBe(false)
+      expect(readFileSync(join(dir, 'ignored.txt'), 'utf8')).toBe('keep ignored\n')
+      expect((await status(dir)).entries).toEqual([])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('discards additions before the first commit and preserves ignored files and nested repositories', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-sidebar-discard-unborn-'))
+    try {
+      gitRun(dir, ['init', '-q'])
+      writeFileSync(join(dir, '.git', 'info', 'exclude'), 'ignored.txt\nforced.txt\n')
+      writeFileSync(join(dir, 'ignored.txt'), 'keep\n')
+      writeFileSync(join(dir, 'forced.txt'), 'added despite ignore\n')
+      writeFileSync(join(dir, 'added.txt'), 'added\n')
+      gitRun(dir, ['add', '-f', 'added.txt', 'forced.txt'])
+      mkdirSync(join(dir, 'new-dir'))
+      writeFileSync(join(dir, 'new-dir', 'loose.txt'), 'untracked\n')
+      mkdirSync(join(dir, 'nested-repo'))
+      gitRun(join(dir, 'nested-repo'), ['init', '-q'])
+      writeFileSync(join(dir, 'nested-repo', 'keep.txt'), 'keep nested\n')
+
+      await discardAll(dir)
+
+      expect(existsSync(join(dir, 'added.txt'))).toBe(false)
+      expect(existsSync(join(dir, 'forced.txt'))).toBe(false)
+      expect(existsSync(join(dir, 'new-dir'))).toBe(false)
+      expect(readFileSync(join(dir, 'ignored.txt'), 'utf8')).toBe('keep\n')
+      expect(readFileSync(join(dir, 'nested-repo', 'keep.txt'), 'utf8')).toBe('keep nested\n')
+      expect(gitRun(dir, ['diff', '--cached', '--name-only'])).toBe('')
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
