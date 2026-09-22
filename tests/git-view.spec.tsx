@@ -44,13 +44,13 @@ const flush = async (): Promise<void> => {
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
 }
 
-function renderGitView(): { container: HTMLDivElement; root: Root } {
+function renderGitView(cwd = '/repo'): { container: HTMLDivElement; root: Root } {
   const container = document.createElement('div')
   document.body.append(container)
   const root = createRoot(container)
   act(() => {
     root.render(createElement(GitView, {
-      scope: { sessionId: 'session-1', cwd: '/repo' },
+      scope: { sessionId: 'session-1', cwd },
       onOpenFile: () => {},
       onOpenDiff: () => {},
       onPrompt: async () => {},
@@ -105,6 +105,105 @@ afterEach(() => {
 })
 
 describe('GitView change groups', () => {
+  it('shows changes while history is still loading', async () => {
+    vi.mocked(api.gitLog).mockReturnValue(new Promise(() => {}))
+    const { container, root } = renderGitView()
+    try {
+      await flush()
+      expect(container.textContent).toContain('unstaged.ts')
+      expect(container.textContent).not.toMatch(/Loading|加载中/)
+    } finally {
+      act(() => { root.unmount() })
+      container.remove()
+    }
+  })
+
+  it('ignores tag results from an older refresh', async () => {
+    let finish!: (value: { entries: GitTagEntry[] }) => void
+    vi.mocked(api.gitTags).mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    const { container, root } = renderGitView()
+    try {
+      await flush()
+      act(() => { window.dispatchEvent(new Event('focus')) })
+      await flush()
+      await act(async () => { finish({ entries: [] }) })
+      expandSection(container, 'git-tag')
+      expect(container.textContent).toContain('v0.2.0')
+    } finally {
+      act(() => { root.unmount() })
+      container.remove()
+    }
+  })
+
+  it('keeps cached changes visible and reports a failed background refresh', async () => {
+    const first = renderGitView()
+    await flush()
+    act(() => { first.root.unmount() })
+    first.container.remove()
+    vi.mocked(api.gitStatus).mockRejectedValue(new Error('refresh failed'))
+    const second = renderGitView()
+    try {
+      await flush()
+      expect(second.container.textContent).toContain('unstaged.ts')
+      expect(second.container.textContent).toContain('refresh failed')
+    } finally {
+      act(() => { second.root.unmount() })
+      second.container.remove()
+    }
+  })
+
+  it('shows local changes before a slow tag query finishes', async () => {
+    let finish!: (value: { entries: GitTagEntry[] }) => void
+    vi.mocked(api.gitTags).mockReturnValue(new Promise(resolve => { finish = resolve }))
+    const { container, root } = renderGitView()
+    try {
+      await flush()
+      expect(container.textContent).toContain('unstaged.ts')
+      expect(container.textContent).not.toMatch(/Loading|加载中/)
+      await act(async () => { finish({ entries: tagList }) })
+      expandSection(container, 'git-tag')
+      expect(container.textContent).toContain('v0.2.0')
+    } finally {
+      act(() => { root.unmount() })
+      container.remove()
+    }
+  })
+
+  it('immediately restores data on reopen and refreshes it in the background', async () => {
+    const first = renderGitView()
+    await flush()
+    act(() => { first.root.unmount() })
+    first.container.remove()
+    let finish!: (value: GitStatusResult) => void
+    vi.mocked(api.gitStatus).mockReturnValue(new Promise(resolve => { finish = resolve }))
+    const second = renderGitView()
+    try {
+      expect(second.container.textContent).toContain('unstaged.ts')
+      expect(second.container.textContent).not.toMatch(/Loading|加载中/)
+      await act(async () => { finish({ ...dirtyStatus, entries: [] }) })
+      await flush()
+      expect(second.container.textContent).not.toContain('unstaged.ts')
+    } finally {
+      act(() => { second.root.unmount() })
+      second.container.remove()
+    }
+  })
+
+  it('does not show another working directory’s cached data', async () => {
+    const first = renderGitView()
+    await flush()
+    act(() => { first.root.unmount() })
+    first.container.remove()
+    vi.mocked(api.gitStatus).mockReturnValue(new Promise(() => {}))
+    const second = renderGitView('/other-repo')
+    try {
+      expect(second.container.textContent).not.toContain('unstaged.ts')
+      expect(second.container.textContent).toMatch(/Loading|加载中/)
+    } finally {
+      act(() => { second.root.unmount() })
+      second.container.remove()
+    }
+  })
   it('splits a path into file name and directory, keeping an untracked folder whole', () => {
     expect(listPathParts('components/video/EpisodeNativeAd.nvue')).toEqual({ name: 'EpisodeNativeAd.nvue', directory: 'components/video' })
     expect(listPathParts('README.md')).toEqual({ name: 'README.md', directory: '' })

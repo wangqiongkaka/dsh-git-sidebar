@@ -200,17 +200,29 @@ const DEFAULT_SECTIONS: SectionState = { changes: true, stash: false, tag: false
 /**
  * What a Git view remembers across remounts (the shell unmounts a tab's body
  * when another tab is shown): folding, how much history was paged in, and
- * the scroll offset of every scroll box, keyed by session.
+ * the scroll offset of every scroll box and the last data, keyed by session/cwd.
  */
-interface ViewMemory { expanded: SectionState; changeView: 'tree' | 'list'; collapsedDirectories: Set<string>; logCount: number; scroll: Record<string, number> }
+interface ViewSnapshot {
+  status: GitStatusResult
+  branchNames: string[]
+  logEntries: GitLogEntry[]
+  logEnded: boolean
+  stashEntries: GitStashEntry[]
+  tagEntries: GitTagEntry[]
+  worktrees: GitWorktree[]
+  worktreePathPrefix: string
+  operation: GitOperation | null
+}
+interface ViewMemory { expanded: SectionState; changeView: 'tree' | 'list'; collapsedDirectories: Set<string>; logCount: number; scroll: Record<string, number>; snapshot?: ViewSnapshot }
 const viewMemory = new Map<string, ViewMemory>()
 /** Forget every remembered view (tests isolate cases with it). */
 export function resetViewMemory(): void { viewMemory.clear() }
-function memoryFor(sessionId: string): ViewMemory {
-  let memory = viewMemory.get(sessionId)
+function memoryFor(scope: SessionScope): ViewMemory {
+  const key = JSON.stringify([scope.sessionId, scope.cwd ?? null])
+  let memory = viewMemory.get(key)
   if (memory === undefined) {
     memory = { expanded: { ...DEFAULT_SECTIONS }, changeView: 'tree', collapsedDirectories: new Set(), logCount: 0, scroll: {} }
-    viewMemory.set(sessionId, memory)
+    viewMemory.set(key, memory)
   }
   return memory
 }
@@ -241,26 +253,32 @@ export function GitView(props: {
   /** Queue a text prompt into the session's chat (history row "add to chat" / "explain"). */
   onPrompt: (text: string) => Promise<void>
 }) {
+  return <GitViewContent key={JSON.stringify([props.scope.sessionId, props.scope.cwd ?? null])} {...props} />
+}
+
+function GitViewContent(props: Parameters<typeof GitView>[0]) {
   const { scope, onOpenFile, onOpenDiff, onOpenWorktree, onPrompt } = props
+  const memory = memoryFor(scope)
+  const snapshot = memory.snapshot
   const viewId = useId()
-  const [status, setStatus] = useState<GitStatusResult | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [status, setStatus] = useState<GitStatusResult | null>(snapshot?.status ?? null)
+  const [loading, setLoading] = useState(snapshot === undefined)
   const [error, setError] = useState<string | null>(null)
-  const [branchNames, setBranchNames] = useState<string[]>([])
-  const [logEntries, setLogEntries] = useState<GitLogEntry[]>([])
-  const [stashEntries, setStashEntries] = useState<GitStashEntry[]>([])
-  const [tagEntries, setTagEntries] = useState<GitTagEntry[]>([])
+  const [branchNames, setBranchNames] = useState<string[]>(snapshot?.branchNames ?? [])
+  const [logEntries, setLogEntries] = useState<GitLogEntry[]>(snapshot?.logEntries ?? [])
+  const [stashEntries, setStashEntries] = useState<GitStashEntry[]>(snapshot?.stashEntries ?? [])
+  const [tagEntries, setTagEntries] = useState<GitTagEntry[]>(snapshot?.tagEntries ?? [])
   const [commitMsg, setCommitMsg] = useState('')
   const [busy, setBusy] = useState(false)
   const [commitError, setCommitError] = useState<string | null>(null)
   const [branchMenuOpen, setBranchMenuOpen] = useState(false)
   const [mergeSource, setMergeSource] = useState<string | null>(null)
   const [rebaseTarget, setRebaseTarget] = useState<string | null>(null)
-  const [worktrees, setWorktrees] = useState<GitWorktree[]>([])
+  const [worktrees, setWorktrees] = useState<GitWorktree[]>(snapshot?.worktrees ?? [])
   const [worktreeOpen, setWorktreeOpen] = useState(false)
   const [worktreeBranch, setWorktreeBranch] = useState('')
   const [worktreePath, setWorktreePath] = useState('')
-  const [worktreePathPrefix, setWorktreePathPrefix] = useState('')
+  const [worktreePathPrefix, setWorktreePathPrefix] = useState(snapshot?.worktreePathPrefix ?? '')
   // A checked-out branch cannot be attached to a second worktree, so the draft
   // creates a new branch and uses the current branch as its base.
   const [worktreeCreateNew, setWorktreeCreateNew] = useState<boolean>(INITIAL_WORKTREE_DRAFT.createNew)
@@ -269,7 +287,7 @@ export function GitView(props: {
   const [worktreeError, setWorktreeError] = useState<string | null>(null)
   const [worktreeMerge, setWorktreeMerge] = useState<GitWorktree | null>(null)
   const [worktreeTarget, setWorktreeTarget] = useState('')
-  const [operation, setOperation] = useState<GitOperation | null>(null)
+  const [operation, setOperation] = useState<GitOperation | null>(snapshot?.operation ?? null)
   /** Branch manager: the open modal, which list it shows, and the checked rows. */
   const [branchManagerOpen, setBranchManagerOpen] = useState(false)
   const [branchTab, setBranchTab] = useState<'local' | 'remote'>('local')
@@ -279,7 +297,7 @@ export function GitView(props: {
   const [branchManagerError, setBranchManagerError] = useState<string | null>(null)
   const graph = useMemo(() => layoutGraph(logEntries), [logEntries])
   /** Whether the history was fully paged (a batch shorter than LOG_BATCH). */
-  const [logEnded, setLogEnded] = useState(false)
+  const [logEnded, setLogEnded] = useState(snapshot?.logEnded ?? false)
   const [logLoadingMore, setLogLoadingMore] = useState(false)
 
   /** The open file-row context menu (cursor position for the portaled Menu). */
@@ -307,7 +325,9 @@ export function GitView(props: {
   const [historyMenu, setHistoryMenu] = useState<{ entry: GitLogEntry; x: number; y: number } | null>(null)
   /** The pending destructive action awaiting confirmation. */
   const [confirm, setConfirm] = useState<ConfirmState | null>(null)
-  const memory = memoryFor(scope.sessionId)
+  useEffect(() => {
+    if (status !== null) memory.snapshot = { status, branchNames, logEntries, logEnded, stashEntries, tagEntries, worktrees, worktreePathPrefix, operation }
+  }, [memory, status, branchNames, logEntries, logEnded, stashEntries, tagEntries, worktrees, worktreePathPrefix, operation])
   const [expandedSections, setExpandedSections] = useState<SectionState>(() => ({ ...memory.expanded }))
   const [changeView, setChangeView] = useState<'tree' | 'list'>(() => memory.changeView)
   const [collapsedDirectories, setCollapsedDirectories] = useState<Set<string>>(() => memory.collapsedDirectories)
@@ -331,22 +351,29 @@ export function GitView(props: {
   }, [memory, logEntries])
 
   /** Reload everything; `silent` skips the loading placeholder (background polls). */
+  const refreshId = useRef(0)
   const refresh = useCallback(async (silent = false): Promise<void> => {
-    if (!silent) setLoading(true)
+    const requestId = ++refreshId.current
+    if (!silent && memory.snapshot === undefined) setLoading(true)
     setError(null)
+    // Remote tag checks must never hold up the local lists or mutation refreshes.
+    void api.gitTags(scope).catch(() => ({ entries: memory.snapshot?.tagEntries ?? [] })).then(result => {
+      if (requestId === refreshId.current) setTagEntries(result.entries)
+    })
     const logCount = Math.max(LOG_BATCH, logCountRef.current)
     try {
-      const [statusResult, branchResult, logResult, worktreeResult, operationResult, stashResult, tagResult] = await Promise.all([
-        api.gitStatus(scope),
+      const [, branchResult, logResult, worktreeResult, operationResult, stashResult] = await Promise.all([
+        api.gitStatus(scope).then(result => {
+          if (requestId === refreshId.current) setStatus(result)
+        }),
         api.gitBranch(scope).catch(() => ({ current: '', names: [] as string[] })),
         // Every page already loaded; further pages arrive via "load more".
         api.gitLog(scope, logCount, 0).catch(() => [] as GitLogEntry[]),
         api.gitWorktrees(scope).catch(() => ({ entries: [] as GitWorktree[], pathPrefix: '' })),
         api.gitOperation(scope).catch(() => ({ operation: null })),
         api.gitStashList(scope).catch(() => ({ entries: [] as GitStashEntry[] })),
-        api.gitTags(scope).catch(() => ({ entries: [] as GitTagEntry[] })),
       ])
-      setStatus(statusResult)
+      if (requestId !== refreshId.current) return
       setBranchNames(branchResult.names)
       setLogEntries(logResult)
       setLogEnded(logResult.length < logCount)
@@ -354,19 +381,21 @@ export function GitView(props: {
       setWorktreePathPrefix(worktreeResult.pathPrefix)
       setOperation(operationResult.operation)
       setStashEntries(stashResult.entries)
-      setTagEntries(tagResult.entries)
       const available = branchResult.names.filter(name => !worktreeResult.entries.some(entry => entry.branch === name))
       setWorktreeBranch(branch => available.includes(branch) ? branch : available[0] ?? '')
       setWorktreeBase(base => branchResult.names.includes(base) ? base : branchResult.current)
       setWorktreePath(path => path !== '' ? path : `${worktreeResult.pathPrefix}${(available[0] ?? 'new-worktree').replace(/[^\w.-]+/g, '-')}`)
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason))
+      if (requestId === refreshId.current) setError(reason instanceof Error ? reason.message : String(reason))
     } finally {
-      setLoading(false)
+      if (requestId === refreshId.current) setLoading(false)
     }
-  }, [scope.sessionId, scope.cwd])
+  }, [scope.sessionId, scope.cwd, memory])
 
-  useEffect(() => { void refresh() }, [refresh])
+  useEffect(() => {
+    void refresh()
+    return () => { refreshId.current += 1 }
+  }, [refresh])
 
   /** Load the branch manager rows; only the open modal needs them, so this
    *  stays out of `refresh` (three more `for-each-ref` runs per poll). */
