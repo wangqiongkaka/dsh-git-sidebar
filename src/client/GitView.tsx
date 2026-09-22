@@ -343,6 +343,7 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
 
   /** How much history is on screen, so a background refresh re-reads that much, not just page one. */
   const logCountRef = useRef(memory.logCount)
+  const logResetId = useRef(0)
   useEffect(() => {
     if (logEntries.length > 0) {
       logCountRef.current = logEntries.length
@@ -354,6 +355,7 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
   const refreshId = useRef(0)
   const refresh = useCallback(async (silent = false): Promise<void> => {
     const requestId = ++refreshId.current
+    const resetId = logResetId.current
     if (!silent && memory.snapshot === undefined) setLoading(true)
     setError(null)
     // Remote tag checks must never hold up the local lists or mutation refreshes.
@@ -375,8 +377,10 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
       ])
       if (requestId !== refreshId.current) return
       setBranchNames(branchResult.names)
-      setLogEntries(logResult)
-      setLogEnded(logResult.length < logCount)
+      if (resetId === logResetId.current) {
+        setLogEntries(logResult)
+        setLogEnded(logResult.length < logCount)
+      }
       setWorktrees(worktreeResult.entries)
       setWorktreePathPrefix(worktreeResult.pathPrefix)
       setOperation(operationResult.operation)
@@ -476,13 +480,15 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
   /** Append the next history page (lazy: only when the user asks for more). */
   const loadMoreLog = async (): Promise<void> => {
     if (logLoadingMore || logEnded) return
+    const resetId = logResetId.current
     setLogLoadingMore(true)
     try {
       const next = await api.gitLog(scope, LOG_BATCH, logEntries.length)
+      if (resetId !== logResetId.current) return
       setLogEntries(entries => [...entries, ...next])
       if (next.length < LOG_BATCH) setLogEnded(true)
     } catch (reason) {
-      setCommitError(`${t('historyLoadError')}: ${reason instanceof Error ? reason.message : String(reason)}`)
+      if (resetId === logResetId.current) setCommitError(`${t('historyLoadError')}: ${reason instanceof Error ? reason.message : String(reason)}`)
     } finally {
       setLogLoadingMore(false)
     }
@@ -490,6 +496,7 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
 
   /** Scroll the history back to the top and drop the paged-in tail (back to page one). */
   const backToTop = (): void => {
+    logResetId.current += 1
     const box = rootRef.current?.querySelector<HTMLElement>('[data-scroll-key="history"]')
     if (box !== null && box !== undefined) box.scrollTop = 0
     memory.scroll.history = 0
@@ -1290,6 +1297,10 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
               data-scroll-key="history"
               onScroll={(event) => {
                 const box = event.currentTarget
+                if (box.scrollTop <= 0) {
+                  if ((memory.scroll.history ?? 0) > 0) backToTop()
+                  return
+                }
                 memory.scroll.history = box.scrollTop
                 setHistoryScrolled(box.scrollTop > box.clientHeight)
                 // Infinite scroll: page in the next batch when the bottom is near.

@@ -105,6 +105,63 @@ afterEach(() => {
 })
 
 describe('GitView change groups', () => {
+  it.each(['scroll', 'button'])('returns to 20 history entries via %s and can page again', async (method) => {
+    const entries = Array.from({ length: 38 }, (_, index) => ({ ...logEntry, hash: String(index), hashFull: String(index) }))
+    vi.mocked(api.gitLog).mockImplementation(async (_scope, count = 20, skip = 0) => entries.slice(skip, skip + count))
+    const { container, root } = renderGitView()
+    try {
+      await flush()
+      const history = container.querySelector<HTMLElement>('[data-scroll-key="history"]')!
+      Object.defineProperties(history, { clientHeight: { value: 100 }, scrollHeight: { value: 500 } })
+      const scroll = (top: number) => act(() => { history.scrollTop = top; history.dispatchEvent(new Event('scroll')) })
+      const rows = () => history.querySelectorAll('[role="button"]').length
+      expect(rows()).toBe(20)
+      scroll(400)
+      await flush()
+      expect(rows()).toBe(38)
+      if (method === 'scroll') scroll(0)
+      else act(() => { [...container.querySelectorAll('button')].find(button => /Back to top|回到顶部/.test(button.textContent ?? ''))!.click() })
+      expect(rows()).toBe(20)
+      expect(history.scrollTop).toBe(0)
+      expect(container.textContent).toMatch(/最近 20 条|Latest 20/)
+      scroll(400)
+      await flush()
+      expect(rows()).toBe(38)
+    } finally {
+      act(() => { root.unmount() })
+      container.remove()
+    }
+  })
+
+  it.each(['page', 'refresh'])('ignores a pending history %s after scrolling back to the top', async (request) => {
+    const entries = Array.from({ length: 40 }, (_, index) => ({ ...logEntry, hash: String(index), hashFull: String(index) }))
+    vi.mocked(api.gitLog).mockImplementation(async (_scope, count = 20, skip = 0) => entries.slice(skip, skip + count))
+    const { container, root } = renderGitView()
+    try {
+      await flush()
+      const history = container.querySelector<HTMLElement>('[data-scroll-key="history"]')!
+      Object.defineProperties(history, { clientHeight: { value: 100 }, scrollHeight: { value: 500 } })
+      const scroll = (top: number) => act(() => { history.scrollTop = top; history.dispatchEvent(new Event('scroll')) })
+      if (request === 'refresh') {
+        scroll(400)
+        await flush()
+      }
+      let finish!: (value: GitLogEntry[]) => void
+      vi.mocked(api.gitLog).mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+      if (request === 'page') scroll(400)
+      else act(() => { window.dispatchEvent(new Event('focus')) })
+      scroll(0)
+      await act(async () => { finish(request === 'page' ? entries.slice(20) : entries) })
+      expect(history.querySelectorAll('[role="button"]')).toHaveLength(20)
+      scroll(400)
+      await flush()
+      expect(history.querySelectorAll('[role="button"]')).toHaveLength(40)
+    } finally {
+      act(() => { root.unmount() })
+      container.remove()
+    }
+  })
+
   it('shows changes while history is still loading', async () => {
     vi.mocked(api.gitLog).mockReturnValue(new Promise(() => {}))
     const { container, root } = renderGitView()
