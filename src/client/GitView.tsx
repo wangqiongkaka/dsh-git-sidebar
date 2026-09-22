@@ -11,8 +11,8 @@
  */
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode, type UIEvent } from 'react'
 import {
-  Button, IconBranchOutline16, IconChevronRightOutline14, IconCodeOutline16, IconCopyOutline16, IconEllipsisOutline16, IconRefreshOutline16,
-  IconSendOutline14, IconTrashOutline16, Input, Menu, Modal, writeClipboard,
+  Button, IconBranchOutlineRegular, IconChevronRightOutlineRegular, IconCodeOutlineRegular, IconCopyOutlineRegular, IconEllipsisOutlineRegular, IconRefreshOutlineRegular,
+  IconSendOutlineRegular, IconTrashOutlineRegular, Input, Menu, Modal, writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { GitBranchEntry, GitBranchOverview, GitLogEntry, GitOperation, GitStashEntry, GitStatusEntry, GitStatusResult, GitTagEntry, GitWorktree, SessionScope } from './api.ts'
 import { api } from './api.ts'
@@ -1034,7 +1034,7 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
                 })
               }}
             >
-              <IconChevronRightOutline14 className={collapsed ? css.gitSectionChevron : css.gitSectionChevronExpanded} />
+              <IconChevronRightOutlineRegular className={collapsed ? css.gitSectionChevron : css.gitSectionChevronExpanded} />
               <span className={css.gitTreeGroupName}>{directory.name}</span>
             </button>
             {!collapsed && <div className={css.gitTreeChildren}>{renderDirectoryContents(directory)}</div>}
@@ -1150,7 +1150,7 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
               disabled={busy}
               onClick={() => { setBranchMenuOpen(open => !open) }}
             >
-              <IconEllipsisOutline16 size={16} />
+              <IconEllipsisOutlineRegular size={16} />
             </button>
           )}
         />
@@ -1175,7 +1175,7 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
           <div className={`${css.gitSection} ${css.gitSectionFlat}`}>
             <div className={css.gitSectionHeader}>
               <button type="button" className={css.gitSectionToggle} aria-expanded={expandedSections.changes} aria-controls={`git-changes-${viewId}`} onClick={() => { toggleSection('changes') }}>
-                <IconChevronRightOutline14 className={expandedSections.changes ? css.gitSectionChevronExpanded : css.gitSectionChevron} />
+                <IconChevronRightOutlineRegular className={expandedSections.changes ? css.gitSectionChevronExpanded : css.gitSectionChevron} />
                 <span>{t('changes')}</span>
                 <span className={css.gitSectionCount}>{entries.length}</span>
               </button>
@@ -1206,7 +1206,7 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
           <div className={css.gitSection}>
             <div className={css.gitSectionHeader}>
               <button type="button" className={css.gitSectionToggle} aria-expanded={expandedSections.stash} aria-controls={`git-stash-entries-${viewId}`} onClick={() => { toggleSection('stash') }}>
-                <IconChevronRightOutline14 className={expandedSections.stash ? css.gitSectionChevronExpanded : css.gitSectionChevron} />
+                <IconChevronRightOutlineRegular className={expandedSections.stash ? css.gitSectionChevronExpanded : css.gitSectionChevron} />
                 <span>{t('stash')}</span>
                 <span className={css.gitSectionCount}>{stashEntries.length}</span>
               </button>
@@ -1236,7 +1236,7 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
           <div className={`${css.gitSection} ${css.gitSectionFlat}`}>
             <div className={css.gitSectionHeader}>
               <button type="button" className={css.gitSectionToggle} aria-expanded={expandedSections.tag} aria-controls={`git-tag-entries-${viewId}`} onClick={() => { toggleSection('tag') }}>
-                <IconChevronRightOutline14 className={expandedSections.tag ? css.gitSectionChevronExpanded : css.gitSectionChevron} />
+                <IconChevronRightOutlineRegular className={expandedSections.tag ? css.gitSectionChevronExpanded : css.gitSectionChevron} />
                 <span>{t('tag')}</span>
                 <span className={css.gitSectionCount}>{tagEntries.length}</span>
               </button>
@@ -1269,7 +1269,7 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
           <div className={`${css.gitSection} ${css.gitSectionFlat} ${css.gitSectionGrow}`}>
             <div className={css.gitSectionHeader}>
               <button type="button" className={css.gitSectionToggle} aria-expanded={expandedSections.history} aria-controls={`git-history-${viewId}`} onClick={() => { toggleSection('history') }}>
-                <IconChevronRightOutline14 className={expandedSections.history ? css.gitSectionChevronExpanded : css.gitSectionChevron} />
+                <IconChevronRightOutlineRegular className={expandedSections.history ? css.gitSectionChevronExpanded : css.gitSectionChevron} />
                 <span>{t('history')}</span>
               </button>
               {historyScrolled && (
@@ -1363,7 +1363,7 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
                   disabled={busy || commitMsg.trim() === '' || stagedEntries.length === 0}
                   onClick={() => { void commit() }}
                 >
-                  <IconSendOutline14 size={16} />
+                  <IconSendOutlineRegular size={16} />
                 </button>
               </div>
             </div>
@@ -1377,16 +1377,16 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
             open={fileMenu !== null}
             onClose={() => { setFileMenu(null) }}
             items={[
-              { id: 'open', label: t('openEditor'), icon: <IconCodeOutline16 size={14} /> },
+              { id: 'open', label: t('openEditor'), icon: <IconCodeOutlineRegular size={14} /> },
               fileMenu?.staged === true
-                ? { id: 'stage', label: t('unstage'), icon: <IconTrashOutline16 size={14} /> }
-                : { id: 'stage', label: t('stage'), icon: <IconBranchOutline16 size={14} /> },
+                ? { id: 'stage', label: t('unstage'), icon: <IconTrashOutlineRegular size={14} /> }
+                : { id: 'stage', label: t('stage'), icon: <IconBranchOutlineRegular size={14} /> },
               ...(fileMenu !== null && !isUntracked(fileMenu.entry)
-                ? [{ id: 'discard', label: t('discard'), icon: <IconTrashOutline16 size={14} />, danger: true }]
+                ? [{ id: 'discard', label: t('discard'), icon: <IconTrashOutlineRegular size={14} />, danger: true }]
                 : []),
               { type: 'separator', id: 'sep1' },
-              { id: 'relative', label: t('copyRelative'), icon: <IconCopyOutline16 size={14} /> },
-              { id: 'absolute', label: t('copyAbsolute'), icon: <IconCopyOutline16 size={14} /> },
+              { id: 'relative', label: t('copyRelative'), icon: <IconCopyOutlineRegular size={14} /> },
+              { id: 'absolute', label: t('copyAbsolute'), icon: <IconCopyOutlineRegular size={14} /> },
             ]}
             onSelect={(id) => {
               const target = fileMenu
@@ -1428,7 +1428,7 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
               { id: 'pop', label: t('stashPop') },
               { id: 'apply', label: t('stashApply') },
               { type: 'separator', id: 'sep3' },
-              { id: 'drop', label: t('stashDrop'), icon: <IconTrashOutline16 size={14} />, danger: true },
+              { id: 'drop', label: t('stashDrop'), icon: <IconTrashOutlineRegular size={14} />, danger: true },
             ]}
             onSelect={(id) => {
               const target = stashMenu
@@ -1463,9 +1463,9 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
             onClose={() => { setTagMenu(null) }}
             items={[
               { id: 'push', label: t('tagPush'), disabled: tagMenu?.entry.remoteState === 'synced' },
-              { id: 'copy', label: t('tagCopyName'), icon: <IconCopyOutline16 size={14} /> },
+              { id: 'copy', label: t('tagCopyName'), icon: <IconCopyOutlineRegular size={14} /> },
               { type: 'separator', id: 'tag-separator' },
-              { id: 'delete', label: t('tagDelete'), icon: <IconTrashOutline16 size={14} />, danger: true },
+              { id: 'delete', label: t('tagDelete'), icon: <IconTrashOutlineRegular size={14} />, danger: true },
             ]}
             onSelect={(id) => {
               const target = tagMenu
@@ -1850,7 +1850,7 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
                   setWorktreeTarget(worktrees.find(candidate => candidate.current)?.path ?? '')
                 }}
               >
-                <IconBranchOutline16 size={14} />
+                <IconBranchOutlineRegular size={14} />
               </button>
               <button
                 type="button"
@@ -1868,7 +1868,7 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
                   })
                 }}
               >
-                <IconTrashOutline16 size={14} />
+                <IconTrashOutlineRegular size={14} />
               </button>
             </div>
           ))}

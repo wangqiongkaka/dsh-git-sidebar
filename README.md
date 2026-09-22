@@ -22,7 +22,7 @@
 
 ## 安装
 
-本插件依赖 DSH 的 `sidebarRightTabs`、`uiWorkspace`、`sidebar.right.pane.tab` 和 `sidebar.right.tab.guide.entry` 接口，其中引导页卡片用到的 `sidebar.right.tab.guide.entry` 插槽自 `0.1.6-alpha.1` 引入，因此要求 **DSH ≥ 0.1.6-alpha.1**；其余接口自 `0.1.5-alpha.1` 起可用。低于该版本的 DSH 加载插件时会因依赖缺失而失败，插件标签与引导页卡片都不会出现。开发与验证所用的 `deepseek-harness` 源码 checkout 为 `0.1.6-alpha.2`，开发依赖的 `link:` 指向相邻的 `deepseek-harness` 目录；目录位置不同时需先调整开发链接，打包产物不依赖该路径。
+本插件按 **DSH 0.1.7-alpha.1** 构建与验证，使用该版本的 `Regular` 图标导出，以及 `sidebarRightTabs`、`uiWorkspace`、`sidebar.right.pane.tab` 和 `sidebar.right.tab.guide.entry` 接口。开发依赖的 `link:` 指向相邻的 `deepseek-harness` 目录；目录位置不同时需先调整开发链接，打包产物不依赖该路径。
 
 在插件目录安装依赖并打包：
 
@@ -49,6 +49,8 @@ pnpm dsh plugin --profile web add file:/绝对路径/dsh-git-sidebar-0.1.8.tgz
 「放弃全部」经确认后丢弃全部未提交更改：已提交文件恢复为 HEAD 版本，已 Add 和未 Add 的新增文件及目录从磁盘删除；忽略文件和嵌套仓库不清理。只有未跟踪文件或尚无首次提交时也可操作。「全部取消 Add」仅取消暂存，保留修改及文件。
 
 ## 验证
+
+在 DSH `0.1.7-alpha.1` 参考构建上，引导卡片和 Git 面板测试已验证新版 `Regular` 图标引用可以渲染；升级前的旧图标引用会使这些测试失败。
 
 `pnpm typecheck`、`pnpm test`（64 项）和 `pnpm build` 已通过。加载回归测试覆盖慢 Tag / 历史查询不阻塞变更列表、重新打开立即展示缓存并后台更新、工作目录隔离、旧 Tag 响应丢弃，以及后台刷新失败时保留数据并提示错误。「放弃全部」在临时 Git 仓库中验证了已暂存和未暂存修改的还原、删除文件的恢复、新增文件及目录的删除、从子目录发起操作、无首次提交的仓库，以及忽略文件和嵌套仓库的保留；组件测试覆盖确认文案、只有未跟踪文件时的按钮可用性、成功后刷新和失败提示。未对用户仓库执行丢弃操作，未将本次修改安装到 DSH 实测界面。构建仍有 tsdown 配置弃用及 CommonJS 格式建议警告。
 

@@ -9,7 +9,7 @@ import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type {} from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-import { IconBranchOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconBranchOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { sessionFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
 import { GitView } from './GitView.tsx'
 import { DiffTab } from './DiffTab.tsx'
@@ -29,7 +29,7 @@ export function apply(ctx: Context): void {
   })
   ctx.effect(() => ctx.sidebarRightTabs.register({
     id: 'dsh-git-sidebar', kind: 'dsh-git', title: () => t('git'),
-    guide: [{ id: 'git', order: 20, title: () => t('git'), description: () => t('gitGuideDesc'), icon: IconBranchOutline16 }],
+    guide: [{ id: 'git', order: 20, title: () => t('git'), description: () => t('gitGuideDesc'), icon: IconBranchOutlineRegular }],
   }))
   ctx.effect(() => ctx.sidebarRightTabs.register({
     id: 'dsh-git-sidebar/diff', kind: 'dsh-git-diff',
@@ -83,7 +83,7 @@ export function apply(ctx: Context): void {
     const { tab } = useTabInfo()
     return <button type="button" className={css.guideEntry} data-sidebar-right-guide-entry={kind}
       onClick={() => { tab.actions.openTab(kind, { replaceTab: true }) }}>
-      <span className={css.guideIcon}><IconBranchOutline16 size={description === undefined ? 22 : 26} /></span>
+      <span className={css.guideIcon}><IconBranchOutlineRegular size={description === undefined ? 22 : 26} /></span>
       <span className={css.guideText}>
         <span className={css.guideRow}>
           <span className={css.guideTitle}>{title}</span>
@@ -93,7 +93,7 @@ export function apply(ctx: Context): void {
       </span>
     </button>
   }
-  function GitTitle() { useLanguage(); return <><IconBranchOutline16 size={16} /> {t('git')}</> }
+  function GitTitle() { useLanguage(); return <><IconBranchOutlineRegular size={16} /> {t('git')}</> }
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register(
     { name: 'sidebar.right.pane.tab', key: 'dsh-git-sidebar' }, GitBody,
   )))
