@@ -757,7 +757,6 @@
   gap: 6px;
   /* Bottom 8px matches the chat composer card's clearance (InputBar .root), so both cards end on one line. */
   padding: 8px 12px;
-  background: var(--dsw-alias-bg-layer-1);
 }
 
 .gitCommitError {
