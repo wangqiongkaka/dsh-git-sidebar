@@ -749,9 +749,11 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
     setBusy(true)
     setWorktreeError(null)
     try {
-      await api.gitWorktreeAdd(scope, path, branch, worktreeCreateNew ? worktreeBase : undefined)
+      const created = await api.gitWorktreeAdd(scope, path, branch, worktreeCreateNew ? worktreeBase : undefined)
       setWorktreePath('')
       await refresh()
+      await onOpenWorktree(created.path)
+      setWorktreeOpen(false)
     } catch (reason) {
       setWorktreeError(reason instanceof Error ? reason.message : String(reason))
     } finally {

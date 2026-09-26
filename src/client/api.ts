@@ -224,7 +224,7 @@ export const api = {
   gitWorktrees: (scope: SessionScope, signal?: AbortSignal) =>
     call<{ entries: GitWorktree[]; pathPrefix: string }>('git.worktree-list', scopePayload(scope, {}), signal),
   gitWorktreeAdd: (scope: SessionScope, path: string, branch: string, base?: string) =>
-    call<{ ok: true }>('git.worktree-add', scopePayload(scope, { path, branch, ...(base === undefined ? {} : { base }) })),
+    call<{ path: string }>('git.worktree-add', scopePayload(scope, { path, branch, ...(base === undefined ? {} : { base }) })),
   gitWorktreeMerge: (scope: SessionScope, targetPath: string, sourceBranch: string) =>
     call<{ ok: true }>('git.worktree-merge', scopePayload(scope, { targetPath, sourceBranch })),
   gitWorktreeRemove: (scope: SessionScope, path: string) =>

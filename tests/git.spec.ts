@@ -1,11 +1,11 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
 import { alignDiffLines, parseUnifiedDiff } from '../src/client/DiffView.tsx'
 import { defaultWorktreeDraft } from '../src/client/GitView.tsx'
-import { branchDelete, branchDeleteRemote, branchOverview, branchPrune, branches, createTag, deleteTag, discard, discardAll, fastForward, parseLogLines, parsePorcelainZ, pushTag, rebase, resetToUpstream, stash, stashList, stashPop, status, tags, wipCommit, wipUndo } from '../src/git.ts'
+import { addWorktree, branchDelete, branchDeleteRemote, branchOverview, branchPrune, branches, createTag, deleteTag, discard, discardAll, fastForward, parseLogLines, parsePorcelainZ, pushTag, rebase, resetToUpstream, stash, stashList, stashPop, status, tags, wipCommit, wipUndo } from '../src/git.ts'
 
 describe('git worktree defaults', () => {
   it('creates a new branch draft based on the current branch', () => {
@@ -191,6 +191,28 @@ describe('discard all changes', () => {
     if (result.status !== 0) throw new Error(result.stderr || `git ${args[0] ?? ''} failed`)
     return result.stdout
   }
+
+  // WHY: the new session is matched by cwd, which DSH stores as a realpath;
+  // a relative or symlinked path would open a duplicate session.
+  it('returns the canonical absolute path of a worktree added by relative path', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-sidebar-worktree-'))
+    try {
+      const repo = join(dir, 'repo')
+      mkdirSync(repo)
+      gitRun(repo, ['init', '-q'])
+      writeFileSync(join(repo, 'a.txt'), 'a\n')
+      gitRun(repo, ['add', '-A'])
+      gitRun(repo, ['commit', '-q', '-m', 'base'])
+      const head = spawnSync('git', ['branch', '--show-current'], { cwd: repo, encoding: 'utf8' }).stdout.trim()
+
+      const path = await addWorktree(repo, '../wt', 'feat-x', head)
+
+      expect(path).toBe(join(realpathSync(dir), 'wt'))
+      expect(existsSync(join(path, 'a.txt'))).toBe(true)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
 
   it('discards all changes from a nested cwd while preserving ignored files', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'dsh-sidebar-discard-all-'))

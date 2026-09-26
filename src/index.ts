@@ -325,8 +325,7 @@ export function buildApi(
     'git.worktree-add': async (payload) => {
       const { cwd } = cwdOf(payload)
       const record = payload as { base?: unknown }
-      await git.addWorktree(cwd, requireString(payload, 'path'), requireRevision(payload, 'branch'), record.base === undefined ? undefined : requireRevision(payload, 'base'))
-      return { ok: true }
+      return { path: await git.addWorktree(cwd, requireString(payload, 'path'), requireRevision(payload, 'branch'), record.base === undefined ? undefined : requireRevision(payload, 'base')) }
     },
     'git.worktree-merge': async (payload) => {
       const { cwd } = cwdOf(payload)

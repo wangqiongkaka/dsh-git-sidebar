@@ -508,8 +508,10 @@ export async function worktrees(cwd: string): Promise<GitWorktree[]> {
 }
 
 /** Add a linked checkout for an existing branch. */
-export async function addWorktree(cwd: string, path: string, branch: string, base?: string): Promise<void> {
+/** Returns the canonical absolute path, matching how DSH stores workspace and session cwd. */
+export async function addWorktree(cwd: string, path: string, branch: string, base?: string): Promise<string> {
   await runGit(cwd, ['worktree', 'add', ...(base === undefined ? [] : ['-b', branch]), '--', path, base ?? branch])
+  return realpathSync(resolve(cwd, path))
 }
 
 export async function worktreePathPrefix(cwd: string): Promise<string> {

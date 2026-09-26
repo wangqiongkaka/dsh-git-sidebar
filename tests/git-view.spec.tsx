@@ -44,7 +44,7 @@ const flush = async (): Promise<void> => {
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
 }
 
-function renderGitView(cwd = '/repo'): { container: HTMLDivElement; root: Root } {
+function renderGitView(cwd = '/repo', onOpenWorktree: (path: string) => Promise<void> = async () => {}): { container: HTMLDivElement; root: Root } {
   const container = document.createElement('div')
   document.body.append(container)
   const root = createRoot(container)
@@ -54,7 +54,7 @@ function renderGitView(cwd = '/repo'): { container: HTMLDivElement; root: Root }
       onOpenFile: () => {},
       onOpenDiff: () => {},
       onPrompt: async () => {},
-      onOpenWorktree: async () => {},
+      onOpenWorktree,
     }))
   })
   return { container, root }
@@ -1011,6 +1011,31 @@ describe('GitView branch manager', () => {
       await flush()
 
       expect(api.gitBranchDelete).toHaveBeenCalledWith({ sessionId: 'session-1', cwd: '/repo' }, ['origin/done'], { remote: true, force: false })
+    } finally {
+      act(() => { root.unmount() })
+      container.remove()
+    }
+  })
+})
+
+describe('GitView worktree', () => {
+  // WHY: creating a Worktree is only useful once a conversation runs inside it;
+  // the session must open on the path the host resolved, not the typed one.
+  it('opens a session in the new worktree after creating it', async () => {
+    const add = vi.spyOn(api, 'gitWorktreeAdd').mockResolvedValue({ path: '/real/repo-worktrees/feat-x' })
+    const open = vi.fn(async () => {})
+    const { container, root } = renderGitView('/repo', open)
+    try {
+      await flush()
+      openMoreMenu()
+      act(() => { labelledButton('Git worktrees…', 'Git Worktree…').click() })
+      typeInto(document.querySelector<HTMLInputElement>('input[aria-label="New branch name"], input[aria-label="新分支名称"]')!, 'feat-x')
+      await act(async () => { labelledButton('Create', '新建').click(); await Promise.resolve() })
+      await flush()
+
+      expect(add).toHaveBeenCalledWith({ sessionId: 'session-1', cwd: '/repo' }, 'feat-x', 'feat-x', 'main')
+      expect(open).toHaveBeenCalledWith('/real/repo-worktrees/feat-x')
+      expect(document.querySelector('input[aria-label="New branch name"], input[aria-label="新分支名称"]')).toBeNull()
     } finally {
       act(() => { root.unmount() })
       container.remove()
