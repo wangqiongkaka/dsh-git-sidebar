@@ -322,6 +322,7 @@ export function buildApi(
       const [entries, pathPrefix] = await Promise.all([git.worktrees(cwd), git.worktreePathPrefix(cwd)])
       return { entries, pathPrefix }
     },
+    'git.worktree-linked': async (payload) => ({ linked: await git.isLinkedWorktree(cwdOf(payload).cwd) }),
     'git.worktree-add': async (payload) => {
       const { cwd } = cwdOf(payload)
       const record = payload as { base?: unknown }

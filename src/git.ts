@@ -507,6 +507,16 @@ export async function worktrees(cwd: string): Promise<GitWorktree[]> {
   return parseWorktreePorcelainZ(raw).map(entry => ({ ...entry, current: entry.path === root }))
 }
 
+/** True inside a linked checkout; false for the main checkout or outside a repository. */
+export async function isLinkedWorktree(cwd: string): Promise<boolean> {
+  try {
+    const [gitDir, commonDir] = (await runGit(cwd, ['rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir'])).trim().split('\n')
+    return gitDir !== commonDir
+  } catch {
+    return false
+  }
+}
+
 /** Add a linked checkout for an existing branch. */
 /** Returns the canonical absolute path, matching how DSH stores workspace and session cwd. */
 export async function addWorktree(cwd: string, path: string, branch: string, base?: string): Promise<string> {

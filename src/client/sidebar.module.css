@@ -1156,3 +1156,14 @@
   border-color: var(--dsw-alias-state-warn-label);
   color: var(--dsw-alias-state-warn-label);
 }
+
+/* Session-row Worktree mark: fills the host's 16px leading cell before the title. */
+.worktreeMark {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 20px;
+  color: var(--dsw-alias-label-tertiary);
+}

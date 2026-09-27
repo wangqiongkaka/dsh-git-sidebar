@@ -62,6 +62,7 @@ it('keeps failures explicit and rejects cross-site requests and option injection
     ['git.branch-delete', { names: ['ok', '--exec=touch /tmp/x'], remote: true }], ['git.branch-delete', { names: [] }],
     ['git.range-diff', { from: '--output=/tmp/x', to: 'HEAD' }],
   ] as const) expect((await call(method, payload)).status).toBe(400)
+  expect((await call('git.worktree-linked')).body.value).toEqual({ linked: false })
   expect((await call('git.branch-list')).body.value.local[0]).toMatchObject({ name: 'main', current: true })
   expect((await call('git.branch-prune')).body.ok).toBe(false)
   expect((await call('git.commit', { message: 'nothing staged' })).body.ok).toBe(false)

@@ -223,6 +223,8 @@ export const api = {
     call<{ ok: true }>('git.rebase', scopePayload(scope, { branch })),
   gitWorktrees: (scope: SessionScope, signal?: AbortSignal) =>
     call<{ entries: GitWorktree[]; pathPrefix: string }>('git.worktree-list', scopePayload(scope, {}), signal),
+  gitWorktreeLinked: (scope: SessionScope) =>
+    call<{ linked: boolean }>('git.worktree-linked', scopePayload(scope, {})),
   gitWorktreeAdd: (scope: SessionScope, path: string, branch: string, base?: string) =>
     call<{ path: string }>('git.worktree-add', scopePayload(scope, { path, branch, ...(base === undefined ? {} : { base }) })),
   gitWorktreeMerge: (scope: SessionScope, targetPath: string, sourceBranch: string) =>

@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
 import { alignDiffLines, parseUnifiedDiff } from '../src/client/DiffView.tsx'
 import { defaultWorktreeDraft } from '../src/client/GitView.tsx'
-import { addWorktree, branchDelete, branchDeleteRemote, branchOverview, branchPrune, branches, createTag, deleteTag, discard, discardAll, fastForward, parseLogLines, parsePorcelainZ, pushTag, rebase, resetToUpstream, stash, stashList, stashPop, status, tags, wipCommit, wipUndo } from '../src/git.ts'
+import { addWorktree, isLinkedWorktree, branchDelete, branchDeleteRemote, branchOverview, branchPrune, branches, createTag, deleteTag, discard, discardAll, fastForward, parseLogLines, parsePorcelainZ, pushTag, rebase, resetToUpstream, stash, stashList, stashPop, status, tags, wipCommit, wipUndo } from '../src/git.ts'
 
 describe('git worktree defaults', () => {
   it('creates a new branch draft based on the current branch', () => {
@@ -209,6 +209,12 @@ describe('discard all changes', () => {
 
       expect(path).toBe(join(realpathSync(dir), 'wt'))
       expect(existsSync(join(path, 'a.txt'))).toBe(true)
+      // The Session-row mark: only the linked checkout counts, not the main one or a plain directory.
+      mkdirSync(join(path, 'nested'))
+      expect(await isLinkedWorktree(path)).toBe(true)
+      expect(await isLinkedWorktree(join(path, 'nested'))).toBe(true)
+      expect(await isLinkedWorktree(repo)).toBe(false)
+      expect(await isLinkedWorktree(dir)).toBe(false)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
