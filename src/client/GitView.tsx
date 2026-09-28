@@ -270,6 +270,7 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
   const [commitMsg, setCommitMsg] = useState('')
   const [busy, setBusy] = useState(false)
   const [commitError, setCommitError] = useState<string | null>(null)
+  const checkoutBlocked = commitError?.startsWith(`${t('checkoutError')}:`) && commitError.includes('Your local changes to the following files would be overwritten by checkout:')
   const [branchMenuOpen, setBranchMenuOpen] = useState(false)
   const [mergeSource, setMergeSource] = useState<string | null>(null)
   const [rebaseTarget, setRebaseTarget] = useState<string | null>(null)
@@ -1349,7 +1350,21 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
 
           {/* Same card as the chat composer: text on top, hint and a round send button inside the card. */}
           <div className={css.gitCommit} style={commitInset === null ? undefined : { paddingBottom: commitInset }}>
-            {commitError !== null && <div className={css.gitCommitError}>{commitError}</div>}
+            {commitError !== null && (
+              <div className={css.gitCommitError} role="alert">
+                <button type="button" className={css.gitCommitErrorClose} aria-label={t('close')} onClick={() => { setCommitError(null) }}>×</button>
+                {checkoutBlocked ? (
+                  <>
+                    <strong>{t('checkoutError')}</strong>
+                    <span>{t('checkoutBlockedByChanges')}</span>
+                    <details>
+                      <summary>{t('errorDetails')}</summary>
+                      <pre className={css.gitCommitErrorDetails}>{commitError}</pre>
+                    </details>
+                  </>
+                ) : <div className={css.gitCommitErrorDetails}>{commitError}</div>}
+              </div>
+            )}
             <div className={css.gitCommitCard}>
               <textarea
                 className={css.gitCommitInput}

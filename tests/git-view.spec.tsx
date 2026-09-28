@@ -105,6 +105,28 @@ afterEach(() => {
 })
 
 describe('GitView change groups', () => {
+  it('summarizes a checkout conflict and keeps the Git output available', async () => {
+    vi.mocked(api.gitBranch).mockResolvedValue({ current: 'main', names: ['main', 'feature'] })
+    vi.spyOn(api, 'gitCheckout').mockRejectedValue(new Error("warning: refname '0.1.2' is ambiguous.\nerror: Your local changes to the following files would be overwritten by checkout:\n\tsrc/client.tsx\nPlease commit your changes or stash them before you switch branches.\nAborting"))
+    const { container, root } = renderGitView()
+    try {
+      await flush()
+      const select = container.querySelector('select')!
+      await act(async () => { select.value = 'feature'; select.dispatchEvent(new Event('change', { bubbles: true })) })
+      const alert = container.querySelector('[role="alert"]')!
+      expect(alert.textContent).toMatch(/切换会覆盖工作区中的未提交更改|Switching would overwrite uncommitted changes/)
+      expect(alert.querySelector('details')?.open).toBe(false)
+      expect(alert.querySelector('pre')?.textContent).toContain('src/client.tsx')
+      expect(alert.querySelector('pre')?.textContent).toContain('warning: refname')
+      expect(select.value).toBe('main')
+      act(() => { alert.querySelector<HTMLButtonElement>('button')!.click() })
+      expect(container.querySelector('[role="alert"]')).toBeNull()
+    } finally {
+      act(() => { root.unmount() })
+      container.remove()
+    }
+  })
+
   it.each(['scroll', 'button'])('returns to 20 history entries via %s and can page again', async (method) => {
     const entries = Array.from({ length: 38 }, (_, index) => ({ ...logEntry, hash: String(index), hashFull: String(index) }))
     vi.mocked(api.gitLog).mockImplementation(async (_scope, count = 20, skip = 0) => entries.slice(skip, skip + count))
