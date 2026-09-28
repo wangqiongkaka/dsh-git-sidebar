@@ -1,4 +1,4 @@
-/** What a diff tab shows: a worktree/index change of one path, or one commit's full patch. */
+/** What a diff view shows: a worktree/index change of one path, or one commit's full patch. */
 export type SidebarDiffRef =
   | { kind: 'worktree'; path: string; staged: boolean; untracked?: boolean }
   | { kind: 'commit'; hash: string; hashFull: string; subject: string }

@@ -3,8 +3,7 @@
  * the stash stack (save / pop / apply / drop), commit with a message box,
  * branch switch, and a VSCode-like history — rows
  * carry branch decorations, author and relative time. Clicking a changed
- * file or a history row opens a dedicated diff TAB (see {@link DiffTab}),
- * placed below the git pane on first use. File rows and history rows open a
+ * file or a history row opens a diff modal. File rows and history rows open a
  * right-click context menu with advanced operations (open in editor, discard,
  * revert, cherry-pick, copy paths/hashes). Refresh is manual + on mount/
  * focus, plus a 5 s poll while the tab is visible (no file watcher — KISS).
@@ -248,7 +247,7 @@ export function GitView(props: {
   onOpenFile: (path: string) => void | Promise<void>
   /** Register the Worktree as a DSH Workspace, create a session, and open it. */
   onOpenWorktree: (path: string) => Promise<void>
-  /** Open a diff tab (the shell places it below the git pane on first use). */
+  /** Open a diff modal. */
   onOpenDiff: (tab: SidebarTab) => void
   /** Queue a text prompt into the session's chat (history row "add to chat" / "explain"). */
   onPrompt: (text: string) => Promise<void>
@@ -509,7 +508,7 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
     }
   }
 
-  /** The diff tab for one changed file (one tab per path+side; same id = focused). */
+  /** The diff for one changed file. */
   const openWorktreeDiff = (entry: GitStatusEntry, staged: boolean): void => {
     onOpenDiff({
       id: `diff:w:${staged ? 's' : 'u'}:${entry.path}`,
@@ -519,7 +518,6 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
     })
   }
 
-  /** The diff tab for one commit (one tab per commit). */
   /** Local branch names decorating a history row (remote refs and HEAD excluded). */
   const localBranchesAt = (entry: GitLogEntry): string[] =>
     refNames(entry.refs).filter(name => name !== 'HEAD' && !name.startsWith('tag: ') && branchNames.includes(name))
@@ -563,6 +561,7 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
     if (from.hashFull !== entry.hashFull) openRangeDiff(from.hashFull, entry.hashFull, false, `${from.hash} ↔ ${entry.hash}`)
   }
 
+  /** The diff for one commit. */
   const openCommitDiff = (entry: GitLogEntry): void => {
     onOpenDiff({
       id: `diff:c:${entry.hashFull}`,

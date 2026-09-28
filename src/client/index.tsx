@@ -9,13 +9,14 @@ import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type {} from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-import { IconBranchOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconBranchOutlineRegular, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import { sessionFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
 import { GitView } from './GitView.tsx'
 import { DiffTab } from './DiffTab.tsx'
 import { api } from './api.ts'
 import { attachLocale, en, LOCALE_NS, t, zh } from './locales.ts'
-import { diffAddress, parseDiffAddress, diffTitle } from './navigation.ts'
+import { parseDiffAddress, diffTitle } from './navigation.ts'
+import type { SidebarDiffRef } from './state.ts'
 import css from './sidebar.module.css'
 
 export const inject = ['slots', 'locale', 'sidebarRightTabs', 'sessions', 'workspaces', 'uiWorkspace']
@@ -44,10 +45,11 @@ export function apply(ctx: Context): void {
     useLanguage()
     const cwd = useSessions(state => state.byId[sessionId]?.cwd)
     const { tab } = useTabInfo()
+    const [openDiff, setOpenDiff] = useState<SidebarDiffRef | null>(null)
     const scope = { sessionId, cwd }
-    return <GitView
+    return <><GitView
       scope={scope}
-      onOpenDiff={seed => { if (seed.diff !== undefined) tab.actions.openResource(diffAddress(sessionId, seed.diff)) }}
+      onOpenDiff={seed => { if (seed.diff !== undefined) setOpenDiff(seed.diff) }}
       onOpenFile={async path => {
         const result = await api.gitPath(scope, path)
         tab.actions.openResource(sessionFileAddress(sessionId, result.path))
@@ -68,6 +70,11 @@ export function apply(ctx: Context): void {
         ctx.uiWorkspace.openSession(id)
       }}
     />
+      <Modal open={openDiff !== null} onClose={() => { setOpenDiff(null) }} title={t('viewDiff')} closeLabel={t('close')}
+        className={css.gitDiffModal} contentClassName={css.gitDiffModalContent}>
+        {openDiff !== null && <DiffTab sessionId={sessionId} cwd={cwd} diff={openDiff} />}
+      </Modal>
+    </>
   }
   function DiffBody({ sessionId, useSessions, useTabInfo }: PropsRuntime<'sidebar.right.pane.tab'>) {
     useLanguage()

@@ -1,11 +1,10 @@
 /**
- * The diff tab: one change opened from the git panel, like VSCode's diff
+ * The diff content: one change opened from the git panel, like VSCode's diff
  * editor. A worktree ref loads the file's unified diff (`git diff`, staged or
  * not; untracked files — which git diff never covers — render as a full-file
  * addition from their content), a commit ref loads the commit's full patch
- * (`git.show`-style). The header carries a refresh button because the tab
- * stays mounted while the git panel's staging/discard operations change the
- * very content it shows.
+ * (`git.show`-style). The header carries a refresh button because staging or
+ * discarding can change the content while it is open.
  */
 import { useCallback, useEffect, useState } from 'react'
 import { IconRefreshOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'

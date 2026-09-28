@@ -4,9 +4,11 @@ import { createElement, type ComponentType } from 'react'
 import { createRoot } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
 import { apply } from '../src/client/index.tsx'
+import type { SidebarTab } from '../src/client/state.ts'
 
-const view = vi.hoisted(() => ({ props: undefined as undefined | { onOpenWorktree(path: string): Promise<void> } }))
+const view = vi.hoisted(() => ({ props: undefined as undefined | { onOpenWorktree(path: string): Promise<void>; onOpenDiff(tab: SidebarTab): void } }))
 vi.mock('../src/client/GitView.tsx', () => ({ GitView: (props: typeof view.props) => { view.props = props; return null } }))
+vi.mock('../src/client/DiffTab.tsx', () => ({ DiffTab: ({ diff }: { diff: { path?: string } }) => <div>{diff.path}</div> }))
 
 ;(globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -43,8 +45,8 @@ describe('right sidebar guide card', () => {
   })
 })
 
-describe('Git view worktree action', () => {
-  it('opens an existing or newly created worktree session through the workspace UI', async () => {
+describe('Git view actions', () => {
+  it('opens worktree sessions and displays a diff in a dismissible modal', async () => {
     const bodies = new Map<string, ComponentType<Record<string, unknown>>>()
     const opened: string[] = []
     const byId = { old: { id: 'old', cwd: '/repo/wt-old', origin: 'user' }, sub: { id: 'sub', cwd: '/repo/wt-new', origin: 'subagent' } }
@@ -75,6 +77,11 @@ describe('Git view worktree action', () => {
     await view.props!.onOpenWorktree('/repo/wt-old')
     await view.props!.onOpenWorktree('/repo/wt-new')
     expect(opened).toEqual(['old', 'created'])
+    act(() => { view.props!.onOpenDiff({ id: 'diff:w:u:a.ts', type: 'diff', title: 'a.ts', diff: { kind: 'worktree', path: 'a.ts', staged: false } }) })
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')
+    expect(dialog?.textContent).toContain('a.ts')
+    act(() => { dialog!.querySelector<HTMLButtonElement>('button[aria-label="关闭"]')!.click() })
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
     act(() => { root.unmount() })
   })
 })
