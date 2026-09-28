@@ -2,15 +2,16 @@
  * The real diff surface for the git panel: parses the host's unified diff
  * text (`git diff` / `git show`) and renders it VSCode-style — per-file
  * sections with hunks (`@@ -a,b +c,d @@` headers), old/new line-number
- * gutters, and aligned context / deleted / added rows colored through the
- * DSH tokens. Untracked files produce no `git diff` output, so the caller
- * can pass the file content to render as a full-file addition instead.
+ * gutters, and aligned context / deleted / added rows with source syntax
+ * highlighting through DSH tokens. Untracked files produce no `git diff`
+ * output, so the caller can pass their content as a full-file addition.
  *
  * The parser is a pure function (`parseUnifiedDiff`) so the interesting
  * cases are unit-tested without a DOM.
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
+import { languageForPath, useCodeHighlighter, type CodeHighlighter, type HighlightSpan } from '@deepseek-ai/dsh-client-ui-primitives'
 import { t } from './locales.ts'
 import css from './sidebar.module.css'
 
@@ -56,6 +57,35 @@ export interface SplitDiffLine {
   old: DiffLine | null
   new: DiffLine | null
   meta?: string
+}
+
+type DisplayRow = { key: string; file: DiffFile; fileIndex: number; type: 'path' | 'hunk' | 'line'; hunk?: DiffHunk; line?: SplitDiffLine }
+type Highlights = Record<'old' | 'new', Map<DiffLine, readonly HighlightSpan[]>>
+
+function highlightedSide(rows: DisplayRow[], side: 'old' | 'new', highlighter: CodeHighlighter): Highlights['old'] {
+  const result = new Map<DiffLine, readonly HighlightSpan[]>()
+  const hunks = new Map<DiffHunk, DiffLine[]>()
+  for (const row of rows) {
+    const line = row.line?.[side]
+    if (row.hunk === undefined || line === undefined || line === null) continue
+    if (!hunks.has(row.hunk)) hunks.set(row.hunk, [])
+    hunks.get(row.hunk)!.push(line)
+  }
+  for (const lines of hunks.values()) {
+    const spans = highlighter(lines.map(line => line.text).join('\n'))
+    if (spans !== undefined) lines.forEach((line, index) => { result.set(line, spans[index] ?? []) })
+  }
+  return result
+}
+
+function DiffFileRows({ file, rows, renderRow }: { file: DiffFile; rows: DisplayRow[]; renderRow: (row: DisplayRow, highlights: Highlights) => ReactNode }) {
+  const path = displayPath(file.newPath === '/dev/null' ? file.oldPath : file.newPath)
+  const highlighter = useCodeHighlighter(languageForPath(path))
+  const highlights = useMemo<Highlights>(() => ({
+    old: highlightedSide(rows, 'old', highlighter),
+    new: highlightedSide(rows, 'new', highlighter),
+  }), [rows, highlighter])
+  return <>{rows.map(row => renderRow(row, highlights))}</>
 }
 
 /** Parse the hunk header `@@ -a[,b] +c[,d] @@ section` (section may contain '@@'). */
@@ -246,7 +276,7 @@ export function DiffView({ diff, untrackedPath, untrackedContent }: DiffViewProp
 
   // Flatten into display rows so the cap can slice a single list.
   const rows = useMemo(() => {
-    const out: Array<{ key: string; file: DiffFile; fileIndex: number; type: 'path' | 'hunk' | 'line'; hunk?: DiffHunk; line?: SplitDiffLine }> = []
+    const out: DisplayRow[] = []
     parsed.files.forEach((file, fileIndex) => {
       out.push({ key: `f${fileIndex}`, file, fileIndex, type: 'path' })
       if (file.binary || !expandedFiles.has(fileIndex)) return
@@ -269,7 +299,7 @@ export function DiffView({ diff, untrackedPath, untrackedContent }: DiffViewProp
 
   if (rows.length === 0) return null
 
-  const renderRow = (row: (typeof rows)[number]): ReactNode => {
+  const renderRow = (row: DisplayRow, highlights: Highlights): ReactNode => {
     if (row.type === 'path') {
       const tag = fileTag(row.file)
       const from = displayPath(row.file.oldPath)
@@ -314,12 +344,17 @@ export function DiffView({ diff, untrackedPath, untrackedContent }: DiffViewProp
     }
     const renderSide = (side: 'old' | 'new'): ReactNode => {
       const value = line[side]
+      const spans = value === null ? undefined : highlights[side].get(value)
       return (
         <div className={clsx(css.gitDiffSide, value?.kind === 'del' && css.gitDiffDel, value?.kind === 'add' && css.gitDiffAdd)}>
           {value !== null && (
             <>
               <span className={css.gitDiffNum}>{side === 'old' ? value.oldNum : value.newNum}</span>
-              <span className={css.gitDiffCode}>{value.text}</span>
+              <code className={css.gitDiffCode}>
+                {spans !== undefined
+                  ? spans.map((span, index) => <span key={index} style={span.style}>{span.text}</span>)
+                  : value.text}
+              </code>
             </>
           )}
         </div>
@@ -333,16 +368,27 @@ export function DiffView({ diff, untrackedPath, untrackedContent }: DiffViewProp
     )
   }
 
+  const renderVisibleRows = (visible: DisplayRow[], part: string): ReactNode => {
+    const byFile = new Map<number, DisplayRow[]>()
+    for (const row of visible) {
+      if (!byFile.has(row.fileIndex)) byFile.set(row.fileIndex, [])
+      byFile.get(row.fileIndex)!.push(row)
+    }
+    return [...byFile].map(([index, fileRows]) => (
+      <DiffFileRows key={`${part}:${index}`} file={fileRows[0]!.file} rows={fileRows} renderRow={renderRow} />
+    ))
+  }
+
   return (
     <div className={css.gitDiff}>
       <div className={css.gitDiffBody}>
-        {head.map(renderRow)}
+        {renderVisibleRows(head, 'head')}
         {hidden > 0 && (
           <button type="button" className={css.gitDiffExpand} aria-expanded={expanded} onClick={() => { setExpanded(value => !value) }}>
             {expanded ? t('diffCollapse') : t('diffExpand', { count: hidden })}
           </button>
         )}
-        {tail.map(renderRow)}
+        {renderVisibleRows(tail, 'tail')}
       </div>
     </div>
   )

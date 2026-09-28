@@ -56,4 +56,27 @@ describe('DiffView file folding', () => {
       container.remove()
     }
   })
+
+  it('shows source changes as highlighted code while preserving line text', () => {
+    const sourceDiff = [
+      'diff --git a/src/a.ts b/src/a.ts',
+      '--- a/src/a.ts',
+      '+++ b/src/a.ts',
+      '@@ -1 +1 @@',
+      '-const count = 1',
+      '+const count = 2',
+    ].join('\n')
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    try {
+      act(() => { root.render(createElement(DiffView, { diff: sourceDiff })) })
+      const code = [...container.querySelectorAll('code')]
+      expect(code.map(element => element.textContent)).toEqual(['const count = 1', 'const count = 2'])
+      expect(code.every(element => element.querySelector('span[style*="--shiki-"]') !== null)).toBe(true)
+    } finally {
+      act(() => { root.unmount() })
+      container.remove()
+    }
+  })
 })

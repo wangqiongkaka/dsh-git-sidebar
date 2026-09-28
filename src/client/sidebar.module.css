@@ -606,6 +606,7 @@
   flex: 1;
   min-width: 0;
   overflow: visible;
+  font: inherit;
 }
 
 .gitDiffDel {
