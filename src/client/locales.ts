@@ -206,6 +206,9 @@ export const zh = {
   timeMinutesAgo: '{n} 分钟前',
   timeHoursAgo: '{n} 小时前',
   timeYesterday: '昨天',
+  timeDaysAgo: '{n} 天前',
+  timeMonthsAgo: '{n} 个月前',
+  timeYearsAgo: '{n} 年前',
   loadMore: '加载更多',
   historyLoadError: '加载更多历史失败',
   openEditor: '打开编辑器',
@@ -419,6 +422,9 @@ export const en = {
   timeMinutesAgo: '{n} min ago',
   timeHoursAgo: '{n} h ago',
   timeYesterday: 'yesterday',
+  timeDaysAgo: '{n} days ago',
+  timeMonthsAgo: '{n} months ago',
+  timeYearsAgo: '{n} years ago',
   loadMore: 'Load more',
   historyLoadError: 'Failed to load more history',
   openEditor: 'Open editor',
@@ -471,18 +477,19 @@ export function isZh(): boolean {
   return activeLocale().toLowerCase().startsWith('zh')
 }
 
-/** Format an ISO 8601 author date relative to now (刚刚 / N 分钟前 / N 小时前 / 昨天 / date). */
+/** Format a Git author date relative to now. */
 export function relativeTime(iso: string): string {
-  const then = Date.parse(iso)
+  const normalized = iso.replace(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) ([+-]\d{2})(\d{2})$/, '$1T$2$3:$4')
+  const then = Date.parse(normalized)
   if (Number.isNaN(then)) return iso
   const seconds = Math.floor((Date.now() - then) / 1000)
   if (seconds < 60) return t('timeJustNow')
   if (seconds < 3600) return t('timeMinutesAgo', { n: Math.floor(seconds / 60) })
   if (seconds < 86400) return t('timeHoursAgo', { n: Math.floor(seconds / 3600) })
   if (seconds < 172800) return t('timeYesterday')
-  const date = new Date(then)
-  const pad = (value: number): string => String(value).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+  if (seconds < 2592000) return t('timeDaysAgo', { n: Math.floor(seconds / 86400) })
+  if (seconds < 31536000) return t('timeMonthsAgo', { n: Math.floor(seconds / 2592000) })
+  return t('timeYearsAgo', { n: Math.floor(seconds / 31536000) })
 }
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
