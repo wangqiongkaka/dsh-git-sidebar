@@ -316,6 +316,9 @@ describe('GitView change groups', () => {
     const first = renderGitView()
     try {
       await flush()
+      expect(first.container.querySelector('[data-change-directory]')).toBeNull()
+      expect(fileButton(first.container, 'src/client/GitView.tsx')?.textContent).toContain('src/client')
+      act(() => { [...first.container.querySelectorAll<HTMLButtonElement>('button')].find(button => ['Tree', '树形'].includes(button.textContent?.trim() ?? ''))!.click() })
       expect(folderToggle(first.container, 'src/client')).not.toBeNull()
       expect(fileButton(first.container, 'src/client/GitView.tsx')?.textContent).not.toContain('src/client')
       act(() => { folderToggle(first.container, 'src').click() })
@@ -436,8 +439,8 @@ describe('GitView change groups', () => {
       expect(container.textContent).toContain('unstaged.ts')
       await act(async () => { releaseStatus(); await Promise.resolve() })
       await flush()
-      act(() => { headerLink(['List', '列表'])!.click() })
-      expect(headerLink(['Tree', '树形'])).toBeDefined()
+      act(() => { headerLink(['Tree', '树形'])!.click() })
+      expect(headerLink(['List', '列表'])).toBeDefined()
 
       act(() => { toggles[0]!.click() })
       expect(toggles[0]!.getAttribute('aria-expanded')).toBe('false')

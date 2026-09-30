@@ -220,7 +220,7 @@ function memoryFor(scope: SessionScope): ViewMemory {
   const key = JSON.stringify([scope.sessionId, scope.cwd ?? null])
   let memory = viewMemory.get(key)
   if (memory === undefined) {
-    memory = { expanded: { ...DEFAULT_SECTIONS }, changeView: 'tree', collapsedDirectories: new Set(), logCount: 0, scroll: {} }
+    memory = { expanded: { ...DEFAULT_SECTIONS }, changeView: 'list', collapsedDirectories: new Set(), logCount: 0, scroll: {} }
     viewMemory.set(key, memory)
   }
   return memory
