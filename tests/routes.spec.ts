@@ -54,6 +54,17 @@ it('stages repo-relative paths from a subdirectory and commits without better-si
   expect((await call('git.path', { path: 'file.txt' })).body.value.path).toBe(join(root, 'file.txt'))
   expect((await call('fs.read', { path: 'file.txt' })).body.value.content).toBe('changed\n')
 })
+it('checks a Workspace path even when it has no Session', async () => {
+  const linked = await mkdtemp(join(tmpdir(), 'dsh-git-linked-'))
+  await rm(linked, { recursive: true })
+  git('worktree', 'add', '--detach', linked)
+  try {
+    expect((await call('git.worktree-linked', { path: linked })).body.value).toEqual({ linked: true })
+    expect((await call('git.worktree-linked', { path: root })).body.value).toEqual({ linked: false })
+  } finally {
+    git('worktree', 'remove', '--force', linked)
+  }
+})
 it('keeps failures explicit and rejects cross-site requests and option injection', async () => {
   for (const [method, payload] of [
     ['git.checkout', { branch: '--orphan=bad' }], ['git.revert', { hash: '--all' }],
@@ -61,8 +72,9 @@ it('keeps failures explicit and rejects cross-site requests and option injection
     ['git.branch-create', { name: '-D', commit: 'a'.repeat(40) }], ['git.branch-delete', { names: ['--force'] }],
     ['git.branch-delete', { names: ['ok', '--exec=touch /tmp/x'], remote: true }], ['git.branch-delete', { names: [] }],
     ['git.range-diff', { from: '--output=/tmp/x', to: 'HEAD' }],
+    ['git.worktree-linked', { path: '--exec=bad' }],
   ] as const) expect((await call(method, payload)).status).toBe(400)
-  expect((await call('git.worktree-linked')).body.value).toEqual({ linked: false })
+  expect((await call('git.worktree-linked')).status).toBe(400)
   expect((await call('git.branch-list')).body.value.local[0]).toMatchObject({ name: 'main', current: true })
   expect((await call('git.branch-prune')).body.ok).toBe(false)
   expect((await call('git.commit', { message: 'nothing staged' })).body.ok).toBe(false)

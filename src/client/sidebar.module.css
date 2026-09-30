@@ -1208,13 +1208,15 @@
   color: var(--dsw-alias-state-warn-label);
 }
 
-/* Session-row Worktree mark: fills the host's 16px leading cell before the title. */
-.worktreeMark {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+/* The host owns the Workspace row; this marker replaces its folder artwork. */
+:global([data-git-worktree-folder]) > svg {
+  display: none;
+}
+
+:global([data-git-worktree-folder])::before {
+  content: '';
   width: 16px;
-  height: 20px;
-  color: var(--dsw-alias-label-tertiary);
+  height: 16px;
+  background: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='currentColor'%3E%3Cpath d='M1.015 8h4.681c1.2 0 1.55-.17 2.282-.43.3-.18.558-.433 1.075-.939l2.275-2.225M1.012 8h4.684c1.2 0 1.55.17 2.282.43.3.18.558.433 1.075.939l2.275 2.225'/%3E%3Ccircle cx='12.45' cy='3.308' r='1.57'/%3E%3Ccircle cx='12.45' cy='12.692' r='1.57'/%3E%3C/svg%3E") center / contain no-repeat;
 }

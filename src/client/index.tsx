@@ -1,5 +1,5 @@
 /** Register Git and per-change diff tabs with the built-in right sidebar. */
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useMemo, useState, useSyncExternalStore } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -100,31 +100,59 @@ export function apply(ctx: Context): void {
       </span>
     </button>
   }
-  // ponytail: cached per cwd for the page's lifetime; a checkout rarely changes kind under a live session.
-  const linkedByCwd = new Map<string, Promise<boolean>>()
-  /** Marks a Session row whose working directory is a linked Git Worktree. */
-  function WorktreeMark({ sessionId }: PropsRuntime<'sidebar.session.row.leading'>) {
-    useLanguage()
-    const cwd = useSyncExternalStore(
-      listener => ctx.sessions.list.subscribe(listener), () => ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd,
-    )
-    const [linked, setLinked] = useState(false)
-    useEffect(() => {
-      if (cwd === undefined || cwd === '') return
-      let check = linkedByCwd.get(cwd)
-      if (check === undefined) {
-        check = api.gitWorktreeLinked({ sessionId, cwd }).then(result => result.linked, () => { linkedByCwd.delete(cwd); return false })
-        linkedByCwd.set(cwd, check)
+  ctx.effect(() => {
+    // ponytail: these host rows have no icon slot; recheck this DOM seam if the host changes its row markup.
+    const linkedByPath = new Map<string, boolean>()
+    const checking = new Set<string>()
+    const rowSelector = '[data-row-key^="workspace:"]'
+    let live = true
+    const sync = () => {
+      const workspaces = ctx.workspaces.list.getSnapshot().items
+      const pathById = new Map<string, string>(workspaces.map(workspace => [workspace.workspaceId, workspace.path]))
+      for (const row of document.querySelectorAll<HTMLElement>(rowSelector)) {
+        const folder = row.firstElementChild
+        if (!(folder instanceof HTMLElement)) continue
+        const path = pathById.get(row.dataset.rowKey!.slice('workspace:'.length))
+        if (path !== undefined && linkedByPath.get(path) === true) {
+          folder.setAttribute('data-git-worktree-folder', '')
+          folder.setAttribute('role', 'img')
+          folder.setAttribute('aria-label', t('worktreeMark'))
+          folder.setAttribute('title', t('worktreeMark'))
+        } else if (folder.hasAttribute('data-git-worktree-folder')) {
+          folder.removeAttribute('data-git-worktree-folder')
+          folder.removeAttribute('role')
+          folder.removeAttribute('aria-label')
+          folder.removeAttribute('title')
+        }
       }
-      let live = true
-      void check.then(value => { if (live) setLinked(value) })
-      return () => { live = false }
-    }, [sessionId, cwd])
-    if (!linked) return null
-    return <span className={css.worktreeMark} data-git-worktree-mark="" role="img" aria-label={t('worktreeMark')} title={t('worktreeMark')}>
-      <IconBranchOutlineRegular size={12} />
-    </span>
-  }
+      for (const { path } of workspaces) {
+        if (linkedByPath.has(path) || checking.has(path)) continue
+        checking.add(path)
+        void api.gitWorktreeLinked(path).then(({ linked }) => { linkedByPath.set(path, linked) }, () => { linkedByPath.set(path, false) })
+          .finally(() => { checking.delete(path); if (live) sync() })
+      }
+    }
+    const observer = new MutationObserver(records => {
+      if (records.some(record => (record.target instanceof Element && record.target.closest(rowSelector) !== null)
+        || [...record.addedNodes].some(node => node instanceof Element && (node.matches(rowSelector) || node.querySelector(rowSelector) !== null)))) sync()
+    })
+    observer.observe(document.body, { childList: true, subtree: true })
+    const unsubscribeWorkspaces = ctx.workspaces.list.subscribe(sync)
+    const unsubscribeLocale = ctx.locale.subscribe(sync)
+    sync()
+    return () => {
+      live = false
+      observer.disconnect()
+      unsubscribeWorkspaces()
+      unsubscribeLocale()
+      for (const folder of document.querySelectorAll('[data-git-worktree-folder]')) {
+        folder.removeAttribute('data-git-worktree-folder')
+        folder.removeAttribute('role')
+        folder.removeAttribute('aria-label')
+        folder.removeAttribute('title')
+      }
+    }
+  })
   function GitTitle() { useLanguage(); return <><IconBranchOutlineRegular size={16} /> {t('git')}</> }
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register(
     { name: 'sidebar.right.pane.tab', key: 'dsh-git-sidebar' }, GitBody,
@@ -134,9 +162,6 @@ export function apply(ctx: Context): void {
   )))
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab.title', () => ctx.slots.register(
     { name: 'sidebar.right.pane.tab.title', key: 'dsh-git-sidebar' }, GitTitle,
-  )))
-  ctx.effect(() => ctx.slots.inject('sidebar.session.row.leading', () => ctx.slots.register(
-    { name: 'sidebar.session.row.leading', id: 'dsh-git-sidebar/worktree', order: 20 }, WorktreeMark,
   )))
   ctx.effect(() => ctx.slots.inject('sidebar.right.tab.guide.entry', () => ctx.slots.register(
     { name: 'sidebar.right.tab.guide.entry', key: 'dsh-git-sidebar' }, GuideEntry,

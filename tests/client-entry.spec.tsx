@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createElement, type ComponentType } from 'react'
 import { createRoot } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
 import { apply } from '../src/client/index.tsx'
+import { api } from '../src/client/api.ts'
 import type { SidebarTab } from '../src/client/state.ts'
 
 const view = vi.hoisted(() => ({ props: undefined as undefined | { onOpenWorktree(path: string): Promise<void>; onOpenDiff(tab: SidebarTab): void } }))
@@ -12,14 +13,23 @@ vi.mock('../src/client/DiffTab.tsx', () => ({ DiffTab: ({ diff }: { diff: { path
 
 ;(globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
+const disposers: Array<() => void> = []
+afterEach(() => {
+  for (const dispose of disposers.splice(0).reverse()) dispose()
+  vi.restoreAllMocks()
+})
+const effect = (run: () => void | (() => void)) => { const dispose = run(); if (typeof dispose === 'function') disposers.push(dispose) }
+const emptyWorkspaces = { list: { getSnapshot: () => ({ items: [] }), subscribe: () => () => {} } }
+
 describe('right sidebar guide card', () => {
   it('names the plugin that provides it and opens the Git tab in place', () => {
     const cards: Array<{ key?: string; component: ComponentType<Record<string, unknown>> }> = []
     const ctx = {
       sessions: { list: { getSnapshot: () => ({ byId: {} }) } },
-      effect(fn: () => unknown) { fn() },
+      effect,
       locale: { register: () => () => {}, subscribe: () => () => {}, getSnapshot: () => ({ active: 'zh' }) },
       sidebarRightTabs: { register: () => () => {} },
+      workspaces: emptyWorkspaces,
       slots: {
         inject: (_name: string, register: () => () => void) => register(),
         register(options: { name: string; key?: string }, component: ComponentType<Record<string, unknown>>) {
@@ -51,11 +61,11 @@ describe('Git view actions', () => {
     const opened: string[] = []
     const byId = { old: { id: 'old', cwd: '/repo/wt-old', origin: 'user' }, sub: { id: 'sub', cwd: '/repo/wt-new', origin: 'subagent' } }
     const ctx = {
-      effect(fn: () => unknown) { fn() },
+      effect,
       locale: { register: () => () => {}, subscribe: () => () => {}, getSnapshot: () => ({ active: 'zh' }) },
       sidebarRightTabs: { register: () => () => {} },
       sessions: { list: { getSnapshot: () => ({ byId }) }, create: async () => 'created' },
-      workspaces: { create: async ({ path }: { path: string }) => ({ workspaceId: `ws:${path}` }) },
+      workspaces: { ...emptyWorkspaces, create: async ({ path }: { path: string }) => ({ workspaceId: `ws:${path}` }) },
       uiWorkspace: { openSession: (id: string) => { opened.push(id) } },
       slots: {
         inject: (_name: string, register: () => () => void) => register(),
@@ -83,5 +93,54 @@ describe('Git view actions', () => {
     act(() => { dialog!.querySelector<HTMLButtonElement>('button[aria-label="关闭"]')!.click() })
     expect(document.querySelector('[role="dialog"]')).toBeNull()
     act(() => { root.unmount() })
+  })
+})
+
+describe('Workspace Worktree icon', () => {
+  it('marks linked Workspace folders after host rerenders without changing Session icons', async () => {
+    vi.spyOn(api, 'gitWorktreeLinked').mockImplementation(async path => ({ linked: path === '/linked' }))
+    const items = [
+      { workspaceId: 'linked', path: '/linked' },
+      { workspaceId: 'regular', path: '/regular' },
+    ]
+    const registered: string[] = []
+    const ctx = {
+      effect,
+      locale: { register: () => () => {}, subscribe: () => () => {}, getSnapshot: () => ({ active: 'zh' }) },
+      sidebarRightTabs: { register: () => () => {} },
+      workspaces: { list: { getSnapshot: () => ({ items }), subscribe: () => () => {} } },
+      slots: {
+        inject: (_name: string, register: () => () => void) => register(),
+        register(options: { name: string }) { registered.push(options.name); return () => {} },
+      },
+    }
+    const host = document.createElement('div')
+    const workspaceRow = (id: string) => {
+      const row = document.createElement('div')
+      row.dataset.rowKey = `workspace:${id}`
+      row.innerHTML = '<span><svg></svg></span><span>name</span>'
+      return row
+    }
+    const linked = workspaceRow('linked')
+    const regular = workspaceRow('regular')
+    const session = document.createElement('div')
+    session.dataset.rowKey = 'session:one'
+    session.innerHTML = '<span data-harness-icon=""></span>'
+    host.append(linked, regular, session)
+    document.body.append(host)
+    try {
+      apply(ctx as never)
+      await vi.waitFor(() => { expect(linked.firstElementChild?.hasAttribute('data-git-worktree-folder')).toBe(true) })
+      expect(regular.firstElementChild?.hasAttribute('data-git-worktree-folder')).toBe(false)
+      expect(session.querySelector('[data-harness-icon]')).not.toBeNull()
+      expect(registered).not.toContain('sidebar.session.row.leading')
+      const replacement = workspaceRow('linked')
+      linked.replaceWith(replacement)
+      await vi.waitFor(() => { expect(replacement.firstElementChild?.hasAttribute('data-git-worktree-folder')).toBe(true) })
+      for (const dispose of disposers.splice(0).reverse()) dispose()
+      expect(replacement.firstElementChild?.hasAttribute('data-git-worktree-folder')).toBe(false)
+    } finally {
+      host.remove()
+    }
   })
 })
