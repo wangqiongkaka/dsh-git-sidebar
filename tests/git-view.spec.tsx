@@ -105,6 +105,112 @@ afterEach(() => {
 })
 
 describe('GitView change groups', () => {
+  it('pulls all four lists at either edge, releases, and leaves ordinary scrolling and zoom alone', async () => {
+    const { container, root } = renderGitView()
+    try {
+      await flush()
+      expandSection(container, 'git-stash')
+      expandSection(container, 'git-tag')
+      vi.useFakeTimers()
+      for (const key of ['changes', 'stash', 'tag', 'history']) {
+        const box = container.querySelector<HTMLElement>(`[data-scroll-key="${key}"]`)!
+        const content = box.firstElementChild!.firstElementChild as HTMLElement
+        Object.defineProperties(box, { clientHeight: { value: 100 }, scrollHeight: { value: 500 } })
+        const wheel = (deltaY: number, extra = {}) => {
+          const event = new WheelEvent('wheel', { deltaY, bubbles: true, cancelable: true, ...extra })
+          box.dispatchEvent(event)
+          return event.defaultPrevented
+        }
+        expect(wheel(-1000)).toBe(true)
+        expect(content.style.transform).toBe('translateY(36px)')
+        expect(box.scrollTop).toBe(0)
+        vi.advanceTimersByTime(100)
+        expect(content.style.transform).toBe('')
+        expect(content.style.transition).toBe('')
+        expect(wheel(-50, { ctrlKey: true })).toBe(false)
+        expect(wheel(-50, { deltaX: 100 })).toBe(false)
+        box.scrollTop = 200
+        expect(wheel(50)).toBe(false)
+        expect(content.style.transform).toBe('')
+        box.scrollTop = 400
+        expect(wheel(1000)).toBe(true)
+        expect(content.style.transform).toBe('translateY(-36px)')
+        expect(box.scrollTop).toBe(400)
+        expect(wheel(-50)).toBe(false)
+        expect(content.style.transform).toBe('')
+      }
+      expect(api.gitLog).toHaveBeenCalledTimes(1)
+      expect(container.querySelector('textarea')!.style.transform).toBe('')
+    } finally {
+      vi.useRealTimers()
+      act(() => { root.unmount() })
+      container.remove()
+    }
+  })
+
+  it('releases touch pulls on end or cancel and preserves horizontal and multi-touch gestures', async () => {
+    const { container, root } = renderGitView()
+    try {
+      await flush()
+      const box = container.querySelector<HTMLElement>('[data-scroll-key="changes"]')!
+      const content = box.firstElementChild!.firstElementChild as HTMLElement
+      Object.defineProperties(box, { clientHeight: { value: 100 }, scrollHeight: { value: 500 } })
+      const touch = (type: string, points: { clientX: number; clientY: number }[]) => {
+        const event = new Event(type, { bubbles: true, cancelable: true })
+        Object.defineProperty(event, 'touches', { value: points })
+        box.dispatchEvent(event)
+        return event.defaultPrevented
+      }
+      for (const end of ['touchend', 'touchcancel']) {
+        touch('touchstart', [{ clientX: 0, clientY: 50 }])
+        expect(touch('touchmove', [{ clientX: 0, clientY: 100 }])).toBe(true)
+        expect(content.style.transform).toBe('translateY(11px)')
+        touch(end, [])
+        expect(content.style.transform).toBe('')
+      }
+      box.scrollTop = 400
+      touch('touchstart', [{ clientX: 0, clientY: 100 }])
+      expect(touch('touchmove', [{ clientX: 0, clientY: 50 }])).toBe(true)
+      expect(content.style.transform).toBe('translateY(-11px)')
+      expect(touch('touchmove', [{ clientX: 0, clientY: 50 }, { clientX: 10, clientY: 50 }])).toBe(false)
+      expect(content.style.transform).toBe('')
+      touch('touchstart', [{ clientX: 0, clientY: 100 }])
+      expect(touch('touchmove', [{ clientX: 80, clientY: 90 }])).toBe(false)
+      expect(content.style.transform).toBe('')
+    } finally {
+      act(() => { root.unmount() })
+      container.remove()
+    }
+  })
+
+  it('disables pulls when reduced motion is requested, including changes during a pull', async () => {
+    const preference = new EventTarget() as EventTarget & { matches: boolean }
+    preference.matches = false
+    vi.stubGlobal('matchMedia', () => preference)
+    const { container, root } = renderGitView()
+    try {
+      await flush()
+      const box = container.querySelector<HTMLElement>('[data-scroll-key="changes"]')!
+      const content = box.firstElementChild!.firstElementChild as HTMLElement
+      Object.defineProperties(box, { clientHeight: { value: 100 }, scrollHeight: { value: 500 } })
+      const wheel = () => {
+        const event = new WheelEvent('wheel', { deltaY: -50, bubbles: true, cancelable: true })
+        box.dispatchEvent(event)
+        return event.defaultPrevented
+      }
+      expect(wheel()).toBe(true)
+      preference.matches = true
+      preference.dispatchEvent(new Event('change'))
+      expect(content.style.transform).toBe('')
+      expect(wheel()).toBe(false)
+      expect(content.style.transform).toBe('')
+    } finally {
+      act(() => { root.unmount() })
+      container.remove()
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('summarizes a checkout conflict and keeps the Git output available', async () => {
     vi.mocked(api.gitBranch).mockResolvedValue({ current: 'main', names: ['main', 'feature'] })
     vi.spyOn(api, 'gitCheckout').mockRejectedValue(new Error("warning: refname '0.1.2' is ambiguous.\nerror: Your local changes to the following files would be overwritten by checkout:\n\tsrc/client.tsx\nPlease commit your changes or stash them before you switch branches.\nAborting"))

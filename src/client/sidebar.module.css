@@ -182,7 +182,21 @@
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-width: thin;
-  overscroll-behavior: contain;
+  overscroll-behavior: none;
+}
+
+.gitScrollClip {
+  overflow: clip;
+}
+
+.gitScrollContent {
+  transition: transform 320ms cubic-bezier(0.22, 1.25, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gitScrollContent {
+    transition: none;
+  }
 }
 
 .gitSectionBodyChanges {

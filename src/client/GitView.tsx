@@ -15,6 +15,7 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { GitBranchEntry, GitBranchOverview, GitLogEntry, GitOperation, GitStashEntry, GitStatusEntry, GitStatusResult, GitTagEntry, GitWorktree, SessionScope } from './api.ts'
 import { api } from './api.ts'
+import { ElasticScroll } from './ElasticScroll.tsx'
 import { layoutGraph, type GraphRow } from './graph.ts'
 import { relativeTo } from './paths.ts'
 import { relativeTime, t } from './locales.ts'
@@ -1197,7 +1198,7 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
               )}
             </div>
             {expandedSections.changes && (
-              <div id={`git-changes-${viewId}`} className={`${css.gitSectionBody} ${css.gitSectionBodyChanges}`} {...scrollProps('changes')}>
+              <ElasticScroll id={`git-changes-${viewId}`} className={`${css.gitSectionBody} ${css.gitSectionBodyChanges}`} {...scrollProps('changes')}>
                 {entries.length === 0 && (
                   <div className={css.gitClean}>
                     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="9" /><path d="M8 12l3 3 5-6" /></svg>
@@ -1208,7 +1209,7 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
                 {changeView === 'list'
                   ? entries.map(renderEntry)
                   : <div className={css.gitTree}>{renderDirectoryContents(changeTree(entries))}</div>}
-              </div>
+              </ElasticScroll>
             )}
           </div>
 
@@ -1222,7 +1223,7 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
             </div>
             {stashError !== null && <div className={css.gitError}>{stashError}</div>}
             {expandedSections.stash && (
-              <div id={`git-stash-entries-${viewId}`} className={css.gitSectionBody} {...scrollProps('stash')}>
+              <ElasticScroll id={`git-stash-entries-${viewId}`} className={css.gitSectionBody} {...scrollProps('stash')}>
                 {stashEntries.length === 0 && <div className={css.gitEmpty}>{t('noChanges')}</div>}
                 {stashEntries.map(entry => (
                   <div key={entry.ref} className={css.gitRow}>
@@ -1238,7 +1239,7 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
                     </button>
                   </div>
                 ))}
-              </div>
+              </ElasticScroll>
             )}
           </div>
 
@@ -1252,7 +1253,7 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
             </div>
             {tagError !== null && <div className={css.gitError}>{tagError}</div>}
             {expandedSections.tag && (
-              <div id={`git-tag-entries-${viewId}`} className={css.gitSectionBody} {...scrollProps('tag')}>
+              <ElasticScroll id={`git-tag-entries-${viewId}`} className={css.gitSectionBody} {...scrollProps('tag')}>
                 {tagEntries.length === 0 && <div className={css.gitEmpty}>{t('noChanges')}</div>}
                 {tagEntries.map(entry => (
                   <div key={entry.name} className={css.gitRow}>
@@ -1271,7 +1272,7 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
                     </button>
                   </div>
                 ))}
-              </div>
+              </ElasticScroll>
             )}
           </div>
 
@@ -1293,7 +1294,7 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
               </div>
             )}
             {expandedSections.history && (
-            <div
+            <ElasticScroll
               id={`git-history-${viewId}`}
               className={`${css.gitSectionBody} ${css.gitSectionBodyHistory}`}
               data-scroll-key="history"
@@ -1344,7 +1345,7 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
                 {logLoadingMore ? t('loading') : t('loadMore')}
               </button>
             )}
-            </div>
+            </ElasticScroll>
             )}
           </div>
 
