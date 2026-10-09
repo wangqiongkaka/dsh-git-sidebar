@@ -105,6 +105,45 @@ afterEach(() => {
 })
 
 describe('GitView change groups', () => {
+  it('previews every full history ref on hover without changing row activation', async () => {
+    const names = ['polish/service-knowledge-and-price', 'origin/polish/service-knowledge-and-price', 'origin/main', 'main', 'v0.2.0']
+    vi.mocked(api.gitLog).mockResolvedValue([{ ...logEntry, refs: `HEAD -> ${names[0]}, ${names.slice(1, 4).join(', ')}, tag: v0.2.0, main` }, { ...logEntry, hashFull: '2'.repeat(40) }])
+    vi.stubGlobal('ResizeObserver', class {
+      observe() {}
+      disconnect() {}
+    })
+    const { container, root } = renderGitView()
+    try {
+      await flush()
+      const rows = container.querySelectorAll<HTMLElement>('[data-scroll-key="history"] [role="button"]')
+      const refs = rows[0]!.querySelector<HTMLElement>('span[title=""]')!
+      expect(refs.textContent).toBe(names.join(''))
+      expect(rows[1]!.querySelector('span[title=""]')).toBeNull()
+      expect(document.querySelector('[role="tooltip"]')).toBeNull()
+      act(() => { refs.firstElementChild!.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })) })
+      const tooltip = document.querySelector('[role="tooltip"]')!
+      expect(tooltip.textContent).toBe(names.join('\n'))
+      expect(tooltip.parentElement).toBe(document.body)
+      act(() => { refs.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body })) })
+      expect(document.querySelector('[role="tooltip"]')).toBeNull()
+      const onOpenDiff = vi.fn()
+      act(() => {
+        root.render(createElement(GitView, {
+          scope: { sessionId: 'session-1', cwd: '/repo' }, onOpenFile: () => {}, onOpenDiff,
+          onPrompt: async () => {}, onOpenWorktree: async () => {},
+        }))
+        refs.firstElementChild!.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+      })
+      act(() => { (refs.firstElementChild as HTMLElement).click() })
+      expect(onOpenDiff).toHaveBeenCalledTimes(1)
+      expect(document.querySelector('[role="tooltip"]')).toBeNull()
+    } finally {
+      act(() => { root.unmount() })
+      container.remove()
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('pulls all four lists at either edge, releases, and leaves ordinary scrolling and zoom alone', async () => {
     const { container, root } = renderGitView()
     try {

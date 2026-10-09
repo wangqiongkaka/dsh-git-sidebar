@@ -973,6 +973,13 @@
   flex-wrap: wrap;
 }
 
+.gitLogRefs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .gitLogRef {
   flex: 0 1 auto;
   min-width: 0;

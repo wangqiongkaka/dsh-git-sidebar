@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode, type UIEvent } from 'react'
 import {
   Button, IconBranchOutlineRegular, IconChevronRightOutlineRegular, IconCodeOutlineRegular, IconCopyOutlineRegular, IconEllipsisOutlineRegular, IconRefreshOutlineRegular,
-  IconSendOutlineRegular, IconTrashOutlineRegular, Input, Menu, Modal, writeClipboard,
+  IconSendOutlineRegular, IconTrashOutlineRegular, Input, Menu, Modal, Tooltip, writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { GitBranchEntry, GitBranchOverview, GitLogEntry, GitOperation, GitStashEntry, GitStatusEntry, GitStatusResult, GitTagEntry, GitWorktree, SessionScope } from './api.ts'
 import { api } from './api.ts'
@@ -1329,9 +1329,15 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
                 <GraphCell row={graph.rows[index]!} lanes={graph.lanes} />
                 <span className={css.gitLogHash}>{entry.hash}</span>
                 <span className={css.gitLogSubject}>{entry.subject}</span>
-                {refNames(entry.refs).map(ref => (
-                  <span key={ref} className={css.gitLogRef} style={{ color: GRAPH_COLORS[graph.rows[index]!.lane % GRAPH_COLORS.length] }}>{ref}</span>
-                ))}
+                {entry.refs !== '' && (
+                  <Tooltip label={refNames(entry.refs).join('\n')} side="bottom" align="end" portal>
+                    <span className={css.gitLogRefs} title="">
+                      {refNames(entry.refs).map(ref => (
+                        <span key={ref} className={css.gitLogRef} style={{ color: GRAPH_COLORS[graph.rows[index]!.lane % GRAPH_COLORS.length] }}>{ref}</span>
+                      ))}
+                    </span>
+                  </Tooltip>
+                )}
                 <span className={css.gitLogMeta}>{relativeTime(entry.date)}</span>
               </div>
             ))}
