@@ -4,10 +4,9 @@ import { isAbsolute, join, resolve } from 'node:path'
 import Schema from 'schemastery'
 import type { Context } from './context-types.ts'
 import * as git from './git.ts'
-import { isTrustedApiRequest } from './trust-fence.ts'
-import { readJsonBody, requireString, SidebarError, writeError, writeJson, writeOk } from './wire.ts'
+import { readJsonBody, requireString, SidebarError, errorResponse, okResponse } from './wire.ts'
 export const name = 'dsh-git-sidebar'
-export const inject = ['webServer', 'sessions', 'webRuntime']
+export const inject = ['sessions', 'connection']
 export const Config = Schema.object({ readLimit: Schema.number().min(1).default(2 * 1024 * 1024) })
 function requireAbsolute(path: string): string {
   if (!isAbsolute(path)) throw new SidebarError('bad-request', 'expected an absolute path')
@@ -397,37 +396,19 @@ export function buildApi(
 }
 
 export function apply(ctx: Context, config: { readLimit: number }): void {
-  const fence = (req: Parameters<typeof isTrustedApiRequest>[0]) => isTrustedApiRequest(req, ctx.webRuntime.trustedHosts)
   const api = buildApi(ctx, config.readLimit)
-  ctx.effect(() => ctx.webServer.register({
-    kind: 'prefix',
-    path: '/git-sidebar/api',
-    handler: async (req, res) => {
-      if (!fence(req)) {
-        writeJson(res, 403, { ok: false, error: { code: 'forbidden', message: 'forbidden' } })
-        return
-      }
-      if (req.method !== 'POST') {
-        writeJson(res, 405, { ok: false, error: { code: 'method-error', message: 'method not allowed' } })
-        return
-      }
-      const pathname = new URL(req.url ?? '/', 'http://dsh.internal').pathname
-      const method = pathname.startsWith('/git-sidebar/api/') ? pathname.slice('/git-sidebar/api/'.length) : undefined
-      if (method === undefined || method.includes('/')) {
-        writeError(res, new SidebarError('not-found', 'unknown sidebar API method', 404))
-        return
-      }
-      try {
-        const payload = await readJsonBody(req)
-        const handler = Object.hasOwn(api, method) ? api[method] : undefined
-        if (handler === undefined) {
-          throw new SidebarError('not-found', `unknown sidebar API method "${method}"`, 404)
+  for (const [method, handler] of Object.entries(api)) {
+    ctx.connection.fetch.register({
+      path: `/api/git-sidebar/${method}`,
+      methods: ['POST'],
+      requestBody: 'streaming',
+      fetch: async (request) => {
+        try {
+          return okResponse(await handler(await readJsonBody(request)))
+        } catch (error) {
+          return errorResponse(error)
         }
-        writeOk(res, await handler(payload))
-      } catch (error) {
-        writeError(res, error)
-      }
-    },
-  }), 'dsh-git-sidebar: /git-sidebar/api routes')
-
+      },
+    })
+  }
 }

@@ -108,7 +108,7 @@ export interface FsBinaryResult { kind: 'binary'; size: number; truncated: boole
 async function call<T>(method: string, payload: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
   let response: Response
   try {
-    response = await fetch(`/git-sidebar/api/${method}`, {
+    response = await fetch(`/api/git-sidebar/${method}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload),

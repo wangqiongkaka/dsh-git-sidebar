@@ -24,6 +24,9 @@ importers:
       '@deepseek-ai/dsh-api-workspace-controller':
         specifier: link:../../deepseek-harness/packages/api/workspace-controller
         version: link:../../deepseek-harness/packages/api/workspace-controller
+      '@deepseek-ai/dsh-client-connection':
+        specifier: link:../../deepseek-harness/packages/client/connection
+        version: link:../../deepseek-harness/packages/client/connection
       '@deepseek-ai/dsh-client-locale':
         specifier: link:../../deepseek-harness/packages/client/locale
         version: link:../../deepseek-harness/packages/client/locale

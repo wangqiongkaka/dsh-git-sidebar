@@ -1,10 +1,9 @@
 /**
- * Wire helpers for the /git-sidebar JSON API: bounded body reading, response
+ * Wire helpers for the /api/git-sidebar JSON API: bounded body reading, response
  * writing, and the shared error envelope. Every API method returns
  * `{ok: true, value}` on success and `{ok: false, error: {code, message}}`
  * (HTTP 4xx/5xx matching the code) on failure.
  */
-import type { SidebarHttpRequest, SidebarHttpResponse } from './context-types.ts'
 
 /** Machine-readable error codes of the sidebar API. */
 export type SidebarErrorCode =
@@ -37,18 +36,24 @@ export interface SidebarOk<T> { ok: true; value: T }
 export interface SidebarErr { ok: false; error: { code: SidebarErrorCode; message: string } }
 
 /** Read and parse the JSON request body (bounded; malformed → bad-request). */
-export async function readJsonBody(req: SidebarHttpRequest): Promise<unknown> {
+export async function readJsonBody(request: Request): Promise<unknown> {
+  if (request.body === null) return {}
+  const reader = request.body.getReader()
   const chunks: Buffer[] = []
   let total = 0
-  for await (const chunk of req) {
-    // The structural request yields string | Uint8Array; Buffer.from accepts
-    // both (and the real runtime chunks are node Buffers anyway).
-    const buffer = Buffer.from(chunk)
-    total += buffer.length
-    if (total > MAX_BODY_BYTES) {
-      throw new SidebarError('bad-request', 'request body too large')
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      total += value.length
+      if (total > MAX_BODY_BYTES) {
+        // Connection closes unread requests after writing the error response.
+        throw new SidebarError('bad-request', 'request body too large')
+      }
+      chunks.push(Buffer.from(value))
     }
-    chunks.push(buffer)
+  } finally {
+    reader.releaseLock()
   }
   const text = Buffer.concat(chunks).toString('utf8')
   if (text.trim() === '') return {}
@@ -59,26 +64,18 @@ export async function readJsonBody(req: SidebarHttpRequest): Promise<unknown> {
   }
 }
 
-/** Write a JSON response with the given status. */
-export function writeJson(res: SidebarHttpResponse, status: number, body: unknown): void {
-  const payload = JSON.stringify(body)
-  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' })
-  res.end(payload)
+/** Build the success envelope. */
+export function okResponse(value: unknown): Response {
+  return Response.json({ ok: true, value })
 }
 
-/** Write the success envelope. */
-export function writeOk(res: SidebarHttpResponse, value: unknown): void {
-  writeJson(res, 200, { ok: true, value })
-}
-
-/** Write the failure envelope for any thrown value (unknown → internal 500). */
-export function writeError(res: SidebarHttpResponse, error: unknown): void {
+/** Build the failure envelope for any thrown value (unknown → internal 500). */
+export function errorResponse(error: unknown): Response {
   if (error instanceof SidebarError) {
-    writeJson(res, error.status, { ok: false, error: { code: error.code, message: error.message } })
-    return
+    return Response.json({ ok: false, error: { code: error.code, message: error.message } }, { status: error.status })
   }
   const message = error instanceof Error ? error.message : String(error)
-  writeJson(res, 500, { ok: false, error: { code: 'internal', message } })
+  return Response.json({ ok: false, error: { code: 'internal', message } }, { status: 500 })
 }
 
 /** Narrow an unknown payload value to a string, else throw bad-request. */

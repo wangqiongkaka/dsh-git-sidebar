@@ -1,22 +1,42 @@
 import { createServer } from 'node:http'
+import { Readable } from 'node:stream'
 import { mkdtemp, mkdir, realpath, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { afterAll, beforeAll, expect, it } from 'vitest'
-import { apply } from '../src/index.ts'
+import { afterAll, beforeAll, expect, it, vi } from 'vitest'
+import { Context as CordisContext } from '@deepseek-ai/cordis'
+import { HostConnectionService } from '@deepseek-ai/dsh-client-connection'
+import { api as clientApi } from '../src/client/api.ts'
+import { apply, inject } from '../src/index.ts'
 import type { Context } from '../src/context-types.ts'
 
 let root: string
 let url: string
-const server = createServer()
+const host = new CordisContext()
+let connection: HostConnectionService
+let disposeConnection: () => Promise<void>
+const server = createServer(async (req, res) => {
+  // The Web fallback answers 405 outside the shared /api channel.
+  if (!req.url?.startsWith('/api/')) { res.writeHead(405).end(); return }
+  const admission = connection.admit(req)
+  if ('rejection' in admission) { res.writeHead(admission.rejection).end(); return }
+  const response = await connection.createSharedFetchHandler('/api').fetch(new Request(`http://${req.headers.host}${req.url}`, {
+    method: req.method!, headers: { 'content-type': 'application/json', cookie: 'test-owner=1' },
+    ...(req.method === 'POST' ? { body: Readable.toWeb(req) as ReadableStream<Uint8Array>, duplex: 'half' } : {}),
+  }))
+  const unread = !req.readableEnded
+  res.writeHead(response.status, { ...Object.fromEntries(response.headers), ...(unread ? { connection: 'close' } : {}) })
+  res.end(Buffer.from(await response.arrayBuffer()))
+  if (unread) req.destroy()
+})
 const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim()
 async function call(method: string, payload: Record<string, unknown> = {}) {
-  const response = await fetch(`${url}/git-sidebar/api/${method}`, {
-    method: 'POST', headers: { 'content-type': 'application/json' },
+  const response = await fetch(`${url}/api/git-sidebar/${method}`, {
+    method: 'POST', headers: { 'content-type': 'application/json', cookie: 'test-owner=1' },
     body: JSON.stringify({ sessionId: 'test', ...payload }),
   })
-  return { status: response.status, body: await response.json() }
+  return { status: response.status, body: await response.json().catch(() => null) }
 }
 beforeAll(async () => {
   root = await realpath(await mkdtemp(join(tmpdir(), 'dsh-git-routes-')))
@@ -24,15 +44,17 @@ beforeAll(async () => {
   await mkdir(join(root, 'sub'))
   await writeFile(join(root, 'file.txt'), 'base\n')
   git('add', '.'); git('commit', '-m', 'base')
-  // This test supplies only the host services consumed by apply.
+  const fiber = host.plugin((ctx) => {
+    connection = new HostConnectionService(ctx, [], {
+      isAuthenticated: (request: { headers: { cookie?: string } }) => request.headers.cookie === 'test-owner=1',
+      authenticateApi: () => undefined,
+    } as unknown as ConstructorParameters<typeof HostConnectionService>[2])
+  })
+  await fiber.await()
+  disposeConnection = () => fiber.dispose()
   const ctx = {
-    effect: (effect: () => unknown) => effect(),
     sessions: { get: () => ({ header: { cwd: join(root, 'sub') } }) },
-    webRuntime: { trustedHosts: [] },
-    webServer: { register: (route: { handler: Parameters<typeof server.on>[1] }) => {
-      server.on('request', route.handler)
-      return () => server.off('request', route.handler)
-    } },
+    connection,
   } as unknown as Context
   apply(ctx, { readLimit: 1024 })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
@@ -42,6 +64,7 @@ beforeAll(async () => {
 })
 afterAll(async () => {
   await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
+  await disposeConnection?.()
   await rm(root, { recursive: true, force: true })
 })
 it('stages repo-relative paths from a subdirectory and commits without better-sidebar', async () => {
@@ -83,7 +106,40 @@ it('keeps failures explicit and rejects cross-site requests and option injection
   expect((await call('git.fast-forward')).body.ok).toBe(false)
   expect(git('log', '-1', '--format=%s')).toBe('standalone')
   expect((await call('toString')).status).toBe(404)
-  const response = await fetch(`${url}/git-sidebar/api/git.status`, { method: 'POST', headers: { origin: 'https://example.invalid' }, body: '{}' })
+  const response = await fetch(`${url}/api/git-sidebar/git.status`, { method: 'POST', headers: { origin: 'https://example.invalid', cookie: 'test-owner=1' }, body: '{}' })
   expect(response.status).toBe(403)
   expect(await readFile(join(root, 'file.txt'), 'utf8')).toBe('changed\n')
+})
+
+it('uses the current Connection services and routes the real client status request without HTTP 405', async () => {
+  const realFetch = globalThis.fetch
+  vi.stubGlobal('fetch', (input: string, init: RequestInit) => realFetch(new URL(input, url), {
+    ...init, headers: { ...init.headers, cookie: 'test-owner=1' },
+  }))
+  try {
+    expect(await clientApi.gitStatus({ sessionId: 'test' })).toMatchObject({ isRepo: true, branch: 'main' })
+    expect(await clientApi.gitBranch({ sessionId: 'test' })).toMatchObject({ current: 'main', names: ['main'] })
+    expect(await clientApi.gitLog({ sessionId: 'test' })).not.toHaveLength(0)
+    expect(await clientApi.gitOperation({ sessionId: 'test' })).toEqual({ operation: null })
+    expect(await clientApi.gitWorktrees({ sessionId: 'test' })).toHaveProperty('entries')
+    expect(await clientApi.gitStashList({ sessionId: 'test' })).toEqual({ entries: [] })
+    expect(await clientApi.gitTags({ sessionId: 'test' })).toEqual({ entries: [] })
+    expect(inject).toEqual(['sessions', 'connection'])
+  } finally { vi.unstubAllGlobals() }
+})
+it('keeps Connection authentication and bounded JSON parsing', async () => {
+  const path = `${url}/api/git-sidebar/git.status`
+  expect((await fetch(path, { method: 'POST', body: '{}' })).status).toBe(401)
+  expect((await fetch(path, {
+    method: 'POST', headers: { cookie: 'test-owner=1' },
+    body: JSON.stringify({ sessionId: 'test' }).padEnd(1 << 20, ' '),
+  })).status).toBe(200)
+  expect((await fetch(path, { method: 'POST', headers: { cookie: 'test-owner=1' }, body: '{' })).status).toBe(400)
+  for (const body of ['{', 'x'.repeat((1 << 20) + 1), 'x'.repeat(2 << 20)]) {
+    const init = { method: 'POST', body: new Blob([body]).stream(), duplex: 'half' }
+    const response = await connection.createSharedFetchHandler('/api').fetch(new Request(path, init))
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ ok: false, error: { code: 'bad-request' } })
+  }
+  expect((await fetch(path, { headers: { cookie: 'test-owner=1' } })).status).toBe(404)
 })
