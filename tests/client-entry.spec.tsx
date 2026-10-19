@@ -4,10 +4,10 @@ import { createElement, type ComponentType } from 'react'
 import { createRoot } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
 import { apply } from '../src/client/index.tsx'
-import { api } from '../src/client/api.ts'
+import { api, SidebarApiError, type SessionScope } from '../src/client/api.ts'
 import type { SidebarTab } from '../src/client/state.ts'
 
-const view = vi.hoisted(() => ({ props: undefined as undefined | { onOpenWorktree(path: string): Promise<void>; onOpenDiff(tab: SidebarTab): void } }))
+const view = vi.hoisted(() => ({ props: undefined as undefined | { scope: SessionScope; onOpenWorktree(path: string): Promise<void>; onOpenDiff(tab: SidebarTab): void } }))
 vi.mock('../src/client/GitView.tsx', () => ({ GitView: (props: typeof view.props) => { view.props = props; return null } }))
 vi.mock('../src/client/DiffTab.tsx', () => ({ DiffTab: ({ diff }: { diff: { path?: string } }) => <div>{diff.path}</div> }))
 
@@ -56,17 +56,24 @@ describe('right sidebar guide card', () => {
 })
 
 describe('Git view actions', () => {
-  it('opens worktree sessions and displays a diff in a dismissible modal', async () => {
+  it('switches the current session directory without creating sessions or changing the original project', async () => {
     const bodies = new Map<string, ComponentType<Record<string, unknown>>>()
-    const opened: string[] = []
-    const byId = { old: { id: 'old', cwd: '/repo/wt-old', origin: 'user' }, sub: { id: 'sub', cwd: '/repo/wt-new', origin: 'subagent' } }
+    const switchDirectory = vi.spyOn(api, 'gitWorktreeOpen').mockImplementation(async (_scope, path) => ({ path }))
+    const byId = {
+      current: { id: 'current', cwd: '/repo', projectionValues: {} as Record<string, unknown> },
+      old: { id: 'old', cwd: '/repo/wt-old' },
+      fresh: { id: 'fresh', cwd: '/repo' },
+    }
+    const createSession = vi.fn()
+    const createWorkspace = vi.fn()
+    const openSession = vi.fn()
     const ctx = {
       effect,
       locale: { register: () => () => {}, subscribe: () => () => {}, getSnapshot: () => ({ active: 'zh' }) },
       sidebarRightTabs: { register: () => () => {} },
-      sessions: { list: { getSnapshot: () => ({ byId }) }, create: async () => 'created' },
-      workspaces: { ...emptyWorkspaces, create: async ({ path }: { path: string }) => ({ workspaceId: `ws:${path}` }) },
-      uiWorkspace: { openSession: (id: string) => { opened.push(id) } },
+      sessions: { list: { getSnapshot: () => ({ byId }) }, create: createSession },
+      workspaces: { ...emptyWorkspaces, create: createWorkspace },
+      uiWorkspace: { openSession },
       slots: {
         inject: (_name: string, register: () => () => void) => register(),
         register(options: { name: string; key?: string }, component: ComponentType<Record<string, unknown>>) {
@@ -78,20 +85,38 @@ describe('Git view actions', () => {
     apply(ctx as never)
     const host = document.createElement('div')
     const root = createRoot(host)
-    act(() => {
+    const render = (sessionId = 'current') => act(() => {
       root.render(createElement(bodies.get('dsh-git-sidebar')!, {
-        sessionId: 'old', useSessions: (select: (state: { byId: typeof byId }) => unknown) => select({ byId }),
+        sessionId, useSessions: (select: (state: { byId: typeof byId }) => unknown) => select({ byId }),
         useTabInfo: () => ({ tab: { actions: {} } }),
       }))
     })
-    await view.props!.onOpenWorktree('/repo/wt-old')
-    await view.props!.onOpenWorktree('/repo/wt-new')
-    expect(opened).toEqual(['old', 'created'])
+    render()
+    expect(view.props!.scope).toEqual({ sessionId: 'current', cwd: '/repo' })
     act(() => { view.props!.onOpenDiff({ id: 'diff:w:u:a.ts', type: 'diff', title: 'a.ts', diff: { kind: 'worktree', path: 'a.ts', staged: false } }) })
     const dialog = document.querySelector<HTMLElement>('[role="dialog"]')
     expect(dialog?.textContent).toContain('a.ts')
     act(() => { dialog!.querySelector<HTMLButtonElement>('button[aria-label="关闭"]')!.click() })
     expect(document.querySelector('[role="dialog"]')).toBeNull()
+    act(() => { view.props!.onOpenDiff({ id: 'diff:w:u:a.ts', type: 'diff', title: 'a.ts', diff: { kind: 'worktree', path: 'a.ts', staged: false } }) })
+    await act(async () => { await view.props!.onOpenWorktree('/repo/wt-old') })
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(switchDirectory).toHaveBeenCalledWith({ sessionId: 'current', cwd: '/repo' }, '/repo/wt-old')
+    byId.current.projectionValues.workingDirectory = '/repo/wt-old'
+    render()
+    expect(view.props!.scope).toEqual({ sessionId: 'current', cwd: '/repo/wt-old' })
+    expect(byId.current.cwd).toBe('/repo')
+    render('fresh')
+    expect(view.props!.scope).toEqual({ sessionId: 'fresh', cwd: '/repo' })
+    render()
+    expect(view.props!.scope.cwd).toBe('/repo/wt-old')
+    switchDirectory.mockRejectedValueOnce(new SidebarApiError('method-error', 'unavailable'))
+    await expect(view.props!.onOpenWorktree('/repo/wt-new')).rejects.toThrow('当前 DSH 版本不支持切换会话工作目录')
+    switchDirectory.mockRejectedValueOnce(new Error('directory unavailable'))
+    await expect(view.props!.onOpenWorktree('/repo/wt-new')).rejects.toThrow('directory unavailable')
+    expect(createSession).not.toHaveBeenCalled()
+    expect(createWorkspace).not.toHaveBeenCalled()
+    expect(openSession).not.toHaveBeenCalled()
     act(() => { root.unmount() })
   })
 })

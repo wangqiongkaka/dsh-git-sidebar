@@ -1,6 +1,6 @@
 {
   "name": "dsh-git-sidebar",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "Git source control and diff tabs for the built-in DSH right sidebar",
   "type": "module",
   "license": "MIT",
@@ -35,8 +35,7 @@
         "@deepseek-ai/dsh-client-ui-sidebar-right",
         "@deepseek-ai/dsh-client-ui-session",
         "@deepseek-ai/dsh-api-session-controller",
-        "@deepseek-ai/dsh-api-workspace-controller",
-        "@deepseek-ai/dsh-client-ui-workspace"
+        "@deepseek-ai/dsh-api-workspace-controller"
       ]
     }
   },

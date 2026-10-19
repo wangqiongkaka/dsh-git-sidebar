@@ -1,12 +1,15 @@
 /** Independent Git operations for the DSH right sidebar. */
-import { open, stat } from 'node:fs/promises'
+import { open, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
 import Schema from 'schemastery'
 import type { Context } from './context-types.ts'
 import * as git from './git.ts'
 import { readJsonBody, requireString, SidebarError, errorResponse, okResponse } from './wire.ts'
 export const name = 'dsh-git-sidebar'
-export const inject = ['sessions', 'connection']
+export const inject = {
+  sessions: { required: true }, agents: { required: true }, connection: { required: true },
+  sessionController: { required: true }, workingDirectory: { required: false },
+}
 export const Config = Schema.object({ readLimit: Schema.number().min(1).default(2 * 1024 * 1024) })
 function requireAbsolute(path: string): string {
   if (!isAbsolute(path)) throw new SidebarError('bad-request', 'expected an absolute path')
@@ -66,7 +69,7 @@ function requireGitOperation(payload: unknown): git.GitOperation {
 
 /**
  * Resolve a session's authoritative working directory. The attached session
- * header wins; while the session is still hydrating from persistence (the
+ * effective directory wins; while the session is still hydrating from persistence (the
  * web client attaches the current conversation a moment after page load, so
  * the very first sidebar requests can arrive detached) the caller's own
  * list-summary cwd is used; the process cwd is the last resort (blank
@@ -76,6 +79,8 @@ function requireGitOperation(payload: unknown): git.GitOperation {
  */
 function sessionCwdOf(ctx: Context, sessionId: string, clientCwd?: string): string {
   const session = ctx.sessions.get(sessionId)
+  const directory = ctx.agents.get(sessionId)?.ctx.get('workingDirectory') ?? ctx.workingDirectory
+  if (session !== undefined && directory !== undefined) return directory.get(session)
   const headerCwd = session?.header.cwd
   if (headerCwd !== undefined && headerCwd !== '') return headerCwd
   if (clientCwd !== undefined && clientCwd !== '') {
@@ -329,6 +334,20 @@ export function buildApi(
       const { cwd } = cwdOf(payload)
       const record = payload as { base?: unknown }
       return { path: await git.addWorktree(cwd, requireString(payload, 'path'), requireRevision(payload, 'branch'), record.base === undefined ? undefined : requireRevision(payload, 'base')) }
+    },
+    'git.worktree-open': async (payload) => {
+      const { sessionId, cwd } = cwdOf(payload)
+      const path = await realpath(requireAbsolute(requireString(payload, 'path')))
+      const entries = await git.worktrees(cwd)
+      const paths = await Promise.all(entries.map(entry => realpath(entry.path).catch(() => undefined)))
+      if (!paths.includes(path)) {
+        throw new SidebarError('bad-request', 'unknown target worktree')
+      }
+      const result = await ctx.sessionController.resolveAgent(sessionId)
+      if ('error' in result) throw result.error
+      const directory = result.agent.ctx.get('workingDirectory')
+      if (directory === undefined) throw new SidebarError('method-error', 'session working-directory changes are unavailable')
+      return { path: await directory.set(result.agent, path) }
     },
     'git.worktree-merge': async (payload) => {
       const { cwd } = cwdOf(payload)
