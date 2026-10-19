@@ -7,19 +7,24 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type {} from '@deepseek-ai/dsh-api-workspace-controller/client'
-import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import { IconBranchOutlineRegular, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import { sessionFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
 import { GitView } from './GitView.tsx'
 import { DiffTab } from './DiffTab.tsx'
-import { api } from './api.ts'
+import { api, SidebarApiError } from './api.ts'
 import { attachLocale, en, LOCALE_NS, t, zh } from './locales.ts'
 import { parseDiffAddress, diffTitle } from './navigation.ts'
 import type { SidebarDiffRef } from './state.ts'
 import css from './sidebar.module.css'
 
-export const inject = ['slots', 'locale', 'sidebarRightTabs', 'sessions', 'workspaces', 'uiWorkspace']
+export const inject = ['slots', 'locale', 'sidebarRightTabs', 'sessions', 'workspaces']
+
+function sessionDirectory(session: { cwd?: string; projectionValues?: object } | undefined): string | undefined {
+  const values = session?.projectionValues
+  return values !== undefined && 'workingDirectory' in values && typeof values.workingDirectory === 'string'
+    ? values.workingDirectory : session?.cwd
+}
 
 /** Mount independent views; every registration is released on plugin unload. */
 export function apply(ctx: Context): void {
@@ -43,7 +48,7 @@ export function apply(ctx: Context): void {
   )
   function GitBody({ sessionId, useSessions, useTabInfo }: PropsRuntime<'sidebar.right.pane.tab'>) {
     useLanguage()
-    const cwd = useSessions(state => state.byId[sessionId]?.cwd)
+    const cwd = useSessions(state => sessionDirectory(state.byId[sessionId]))
     const { tab } = useTabInfo()
     const [openDiff, setOpenDiff] = useState<SidebarDiffRef | null>(null)
     const scope = { sessionId, cwd }
@@ -63,11 +68,13 @@ export function apply(ctx: Context): void {
         if (!result.ok) throw new Error(result.error.message)
       }}
       onOpenWorktree={async path => {
-        const existing = Object.values(ctx.sessions.list.getSnapshot().byId).find(session => session.cwd === path && session.origin !== 'subagent')
-        if (existing !== undefined) { ctx.uiWorkspace.openSession(existing.id); return }
-        const workspace = await ctx.workspaces.create({ path })
-        const id = await ctx.sessions.create({ workspaceId: workspace.workspaceId })
-        ctx.uiWorkspace.openSession(id)
+        try {
+          await api.gitWorktreeOpen(scope, path)
+          setOpenDiff(null)
+        } catch (error) {
+          if (error instanceof SidebarApiError && error.code === 'method-error') throw new Error(t('worktreeSessionUnsupported'))
+          throw error
+        }
       }}
     />
       <Modal open={openDiff !== null} onClose={() => { setOpenDiff(null) }} title={t('viewDiff')} closeLabel={t('close')}
@@ -78,7 +85,7 @@ export function apply(ctx: Context): void {
   }
   function DiffBody({ sessionId, useSessions, useTabInfo }: PropsRuntime<'sidebar.right.pane.tab'>) {
     useLanguage()
-    const cwd = useSessions(state => state.byId[sessionId]?.cwd)
+    const cwd = useSessions(state => sessionDirectory(state.byId[sessionId]))
     const { tab } = useTabInfo()
     const value = useMemo(() => parseDiffAddress(tab.navigation.address), [tab.navigation.address])
     if (value === undefined || value.sessionId !== sessionId) return <p>{t('diffLoadError')}</p>

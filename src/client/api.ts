@@ -227,6 +227,8 @@ export const api = {
     call<{ linked: boolean; main?: string }>('git.worktree-linked', { path }),
   gitWorktreeAdd: (scope: SessionScope, path: string, branch: string, base?: string) =>
     call<{ path: string }>('git.worktree-add', scopePayload(scope, { path, branch, ...(base === undefined ? {} : { base }) })),
+  gitWorktreeOpen: (scope: SessionScope, path: string) =>
+    call<{ path: string }>('git.worktree-open', scopePayload(scope, { path })),
   gitWorktreeMerge: (scope: SessionScope, targetPath: string, sourceBranch: string) =>
     call<{ ok: true }>('git.worktree-merge', scopePayload(scope, { targetPath, sourceBranch })),
   gitWorktreeRemove: (scope: SessionScope, path: string) =>

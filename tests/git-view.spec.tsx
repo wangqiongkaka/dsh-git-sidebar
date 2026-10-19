@@ -1191,7 +1191,7 @@ describe('GitView branch manager', () => {
 describe('GitView worktree', () => {
   // WHY: creating a Worktree is only useful once a conversation runs inside it;
   // the session must open on the path the host resolved, not the typed one.
-  it('opens a session in the new worktree after creating it', async () => {
+  it('switches the current session to the new worktree after creating it', async () => {
     const add = vi.spyOn(api, 'gitWorktreeAdd').mockResolvedValue({ path: '/real/repo-worktrees/feat-x' })
     const open = vi.fn(async () => {})
     const { container, root } = renderGitView('/repo', open)

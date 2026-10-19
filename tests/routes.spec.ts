@@ -16,6 +16,16 @@ let url: string
 const host = new CordisContext()
 let connection: HostConnectionService
 let disposeConnection: () => Promise<void>
+const directoryBySession = new WeakMap<object, string>()
+const sessions = new Map<string, { header: { cwd: string } }>()
+let directoryAvailable = true
+const directory = {
+  get: (session: { header: { cwd: string } }) => directoryBySession.get(session) ?? session.header.cwd,
+  set: vi.fn(async (agent: { session: object }, path: string) => {
+    directoryBySession.set(agent.session, path)
+    return path
+  }),
+}
 const server = createServer(async (req, res) => {
   // The Web fallback answers 405 outside the shared /api channel.
   if (!req.url?.startsWith('/api/')) { res.writeHead(405).end(); return }
@@ -52,8 +62,20 @@ beforeAll(async () => {
   })
   await fiber.await()
   disposeConnection = () => fiber.dispose()
+  sessions.set('test', { header: { cwd: join(root, 'sub') } })
+  sessions.set('fresh', { header: { cwd: join(root, 'sub') } })
   const ctx = {
-    sessions: { get: () => ({ header: { cwd: join(root, 'sub') } }) },
+    sessions: { get: (id: string) => sessions.get(id) },
+    agents: { get: (id: string) => {
+      const session = sessions.get(id)
+      return session === undefined ? undefined : { session, ctx: { get: () => directoryAvailable ? directory : undefined } }
+    } },
+    workingDirectory: directory,
+    sessionController: { resolveAgent: async (id: string) => {
+      const session = sessions.get(id)
+      return session === undefined ? { error: new Error('session unavailable') }
+        : { agent: { session, ctx: { get: () => directoryAvailable ? directory : undefined } } }
+    } },
     connection,
   } as unknown as Context
   apply(ctx, { readLimit: 1024 })
@@ -88,6 +110,36 @@ it('checks a Workspace path even when it has no Session', async () => {
     git('worktree', 'remove', '--force', linked)
   }
 })
+it('switches only the current Session to a registered Worktree and uses it for later Git operations', async () => {
+  const linked = `${root}-linked`
+  git('worktree', 'add', '-b', 'feat/session', linked)
+  try {
+    expect((await call('git.worktree-open', { path: linked })).body.value).toEqual({ path: linked })
+    expect((await call('git.status', { cwd: root })).body.value.branch).toBe('feat/session')
+    expect((await call('git.worktree-list')).body.value.entries.find((entry: { current: boolean }) => entry.current).path).toBe(linked)
+    await writeFile(join(linked, 'file.txt'), 'worktree only\n')
+    expect((await call('git.stage', { path: 'file.txt', cwd: root })).status).toBe(200)
+    expect((await call('git.diff', { path: 'file.txt', staged: true })).body.value.diff).toContain('+worktree only')
+    expect((await call('git.path', { path: 'file.txt' })).body.value.path).toBe(join(linked, 'file.txt'))
+    expect((await call('git.status', { sessionId: 'fresh' })).body.value.branch).toBe('main')
+    expect(git('diff', '--cached')).toBe('')
+    expect(sessions.get('test')!.header.cwd).toBe(join(root, 'sub'))
+    expect((await call('git.worktree-open', { path: tmpdir() })).status).toBe(400)
+    expect((await call('git.worktree-open', { path: `${root}-missing` })).body.ok).toBe(false)
+    expect((await call('git.status')).body.value.branch).toBe('feat/session')
+    directoryAvailable = false
+    expect((await call('git.worktree-open', { path: root })).body.error.code).toBe('method-error')
+    expect((await call('git.status')).body.value.branch).toBe('feat/session')
+    directoryAvailable = true
+    expect((await call('git.worktree-open', { path: root })).body.value.path).toBe(root)
+    expect((await call('git.status')).body.value.branch).toBe('main')
+  } finally {
+    directoryAvailable = true
+    directoryBySession.delete(sessions.get('test')!)
+    git('worktree', 'remove', '--force', linked)
+    git('branch', '-d', 'feat/session')
+  }
+})
 it('keeps failures explicit and rejects cross-site requests and option injection', async () => {
   for (const [method, payload] of [
     ['git.checkout', { branch: '--orphan=bad' }], ['git.revert', { hash: '--all' }],
@@ -96,6 +148,8 @@ it('keeps failures explicit and rejects cross-site requests and option injection
     ['git.branch-delete', { names: ['ok', '--exec=touch /tmp/x'], remote: true }], ['git.branch-delete', { names: [] }],
     ['git.range-diff', { from: '--output=/tmp/x', to: 'HEAD' }],
     ['git.worktree-linked', { path: '--exec=bad' }],
+    ['git.worktree-open', { path: '--exec=bad' }],
+    ['git.worktree-open', { path: root, sessionId: '' }],
   ] as const) expect((await call(method, payload)).status).toBe(400)
   expect((await call('git.worktree-linked')).status).toBe(400)
   expect((await call('git.branch-list')).body.value.local[0]).toMatchObject({ name: 'main', current: true })
@@ -124,7 +178,7 @@ it('uses the current Connection services and routes the real client status reque
     expect(await clientApi.gitWorktrees({ sessionId: 'test' })).toHaveProperty('entries')
     expect(await clientApi.gitStashList({ sessionId: 'test' })).toEqual({ entries: [] })
     expect(await clientApi.gitTags({ sessionId: 'test' })).toEqual({ entries: [] })
-    expect(inject).toEqual(['sessions', 'connection'])
+    expect(inject).toEqual({ sessions: { required: true }, agents: { required: true }, connection: { required: true }, sessionController: { required: true }, workingDirectory: { required: false } })
   } finally { vi.unstubAllGlobals() }
 })
 it('keeps Connection authentication and bounded JSON parsing', async () => {
