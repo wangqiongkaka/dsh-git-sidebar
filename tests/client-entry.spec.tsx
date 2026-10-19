@@ -189,4 +189,57 @@ describe('Workspace Worktree icon', () => {
       tree.remove()
     }
   })
+
+  it('folds a main checkout once on load, hiding its Worktree groups until the user unfolds it', async () => {
+    vi.spyOn(api, 'gitWorktreeLinked').mockImplementation(async path =>
+      path.startsWith('/repo-') ? { linked: true, main: '/repo' } : { linked: false })
+    const items = ['repo', 'repo-01', 'repo-02', 'other'].map(id => ({ workspaceId: id, path: `/${id}` }))
+    const ctx = {
+      effect,
+      locale: { register: () => () => {}, subscribe: () => () => {}, getSnapshot: () => ({ active: 'zh' }) },
+      sidebarRightTabs: { register: () => () => {} },
+      workspaces: { list: { getSnapshot: () => ({ items }), subscribe: () => () => {} } },
+      slots: { inject: (_name: string, register: () => () => void) => register(), register: () => () => {} },
+    }
+    // The host's group header toggles its own aria-expanded on a click, as ui-workspace does.
+    const section = (id: string) => {
+      const group = document.createElement('div')
+      group.innerHTML = `<span><div data-row-key="workspace:${id}" role="treeitem" aria-expanded="true"><span><svg></svg></span></div></span>`
+      const row = group.querySelector<HTMLElement>('[data-row-key]')!
+      row.addEventListener('click', () => { row.setAttribute('aria-expanded', String(row.getAttribute('aria-expanded') !== 'true')) })
+      return group
+    }
+    const tree = document.createElement('div')
+    tree.setAttribute('role', 'tree')
+    const [repo, wt1, wt2, other] = [section('repo'), section('repo-01'), section('repo-02'), section('other')]
+    tree.append(repo, wt1, wt2, other)
+    document.body.append(tree)
+    const row = (group: HTMLElement) => group.querySelector<HTMLElement>('[data-row-key]')!
+    try {
+      apply(ctx as never)
+      await vi.waitFor(() => { expect(wt1.hidden).toBe(true) })
+      expect(row(repo).getAttribute('aria-expanded')).toBe('false')
+      expect(wt2.hidden).toBe(true)
+      expect(other.hidden).toBe(false)
+      expect(repo.hasAttribute('data-git-worktree-open')).toBe(false)
+      expect(wt2.hasAttribute('data-git-worktree-last')).toBe(true)
+      expect(wt1.hasAttribute('data-git-worktree-last')).toBe(false)
+      // Unfolding shows the Worktrees under it and stays unfolded across redraws.
+      row(repo).click()
+      await vi.waitFor(() => { expect(wt1.hidden).toBe(false) })
+      expect(wt2.hidden).toBe(false)
+      expect(repo.hasAttribute('data-git-worktree-open')).toBe(true)
+      tree.append(section('later'))
+      await new Promise(resolve => setTimeout(resolve, 0))
+      expect(row(repo).getAttribute('aria-expanded')).toBe('true')
+      // Folding again hides them again.
+      row(repo).click()
+      await vi.waitFor(() => { expect(wt1.hidden).toBe(true) })
+      for (const dispose of disposers.splice(0).reverse()) dispose()
+      expect([wt1.hidden, wt2.hidden]).toEqual([false, false])
+      expect(wt2.hasAttribute('data-git-worktree-last')).toBe(false)
+    } finally {
+      tree.remove()
+    }
+  })
 })

@@ -1258,3 +1258,8 @@
 :global([data-git-worktree-child]) {
   --dsh-workspace-indent: 12px !important;
 }
+
+/* A folded main checkout hides its Worktree groups; the host's own group styles would otherwise keep them shown. */
+:global([data-git-worktree-child][hidden]) {
+  display: none !important;
+}

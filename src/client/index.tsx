@@ -107,15 +107,21 @@ export function apply(ctx: Context): void {
     const checking = new Set<string>()
     const rowSelector = '[data-row-key^="workspace:"]'
     let live = true
+    // Main checkouts already folded once on this page: they start folded, then follow the user's own toggles.
+    const folded = new Set<string>()
     const clearNesting = (section: HTMLElement) => {
+      if (section.hasAttribute('data-git-worktree-child')) section.hidden = false
       section.removeAttribute('data-git-worktree-child')
+      section.removeAttribute('data-git-worktree-open')
+      section.removeAttribute('data-git-worktree-last')
       section.style.removeProperty('order')
     }
     // ponytail: nesting is visual only (flex `order`), so DOM order still drives drag targets and the host's
-    // tree semantics, a host reorder glides to the stale order then snaps, and folding the main group leaves its
-    // Worktree groups shown; it applies only to top-level groups ("By workspace") whose main checkout is itself a Workspace.
+    // tree semantics, and a host reorder glides to the stale order then snaps; it applies only to top-level groups
+    // ("By workspace") whose main checkout is itself a Workspace. Folding the main group hides its Worktree groups.
     const nest = (sectionById: Map<string, HTMLElement>, pathById: Map<string, string>, idByPath: Map<string, string>) => {
       const nested = new Set<Element>()
+      const worktreesOf = new Map<HTMLElement, HTMLElement[]>()
       for (const [id, section] of sectionById) {
         const main = mainByPath.get(pathById.get(id)!)
         const parent = typeof main === 'string' ? sectionById.get(idByPath.get(main) ?? '') : undefined
@@ -124,6 +130,21 @@ export function apply(ctx: Context): void {
         // A Worktree sorts right after its main checkout; equal orders keep sibling Worktrees in host order.
         section.style.order = String(2 * [...parent.parentElement!.children].indexOf(parent) + 1)
         nested.add(parent.parentElement!)
+        worktreesOf.set(parent, [...worktreesOf.get(parent) ?? [], section])
+      }
+      for (const [parent, worktrees] of worktreesOf) {
+        const row = parent.querySelector<HTMLElement>(rowSelector)!
+        const key = row.dataset.rowKey!
+        if (!folded.has(key)) {
+          folded.add(key)
+          if (row.getAttribute('aria-expanded') === 'true') row.click()
+        }
+        const open = row.getAttribute('aria-expanded') !== 'false'
+        parent.toggleAttribute('data-git-worktree-open', open)
+        worktrees.forEach((section, index) => {
+          section.hidden = !open
+          section.toggleAttribute('data-git-worktree-last', index === worktrees.length - 1)
+        })
       }
       for (const tree of document.querySelectorAll<HTMLElement>('[data-git-worktree-tree]')) {
         if (nested.has(tree)) continue
@@ -174,7 +195,7 @@ export function apply(ctx: Context): void {
       if (records.some(record => (record.target instanceof Element && record.target.closest(rowSelector) !== null)
         || [...record.addedNodes].some(node => node instanceof Element && (node.matches(rowSelector) || node.querySelector(rowSelector) !== null)))) sync()
     })
-    observer.observe(document.body, { childList: true, subtree: true })
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['aria-expanded'] })
     const unsubscribeWorkspaces = ctx.workspaces.list.subscribe(sync)
     const unsubscribeLocale = ctx.locale.subscribe(sync)
     sync()
