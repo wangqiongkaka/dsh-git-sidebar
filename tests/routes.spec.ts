@@ -82,7 +82,7 @@ it('checks a Workspace path even when it has no Session', async () => {
   await rm(linked, { recursive: true })
   git('worktree', 'add', '--detach', linked)
   try {
-    expect((await call('git.worktree-linked', { path: linked })).body.value).toEqual({ linked: true })
+    expect((await call('git.worktree-linked', { path: linked })).body.value).toEqual({ linked: true, main: await realpath(root) })
     expect((await call('git.worktree-linked', { path: root })).body.value).toEqual({ linked: false })
   } finally {
     git('worktree', 'remove', '--force', linked)

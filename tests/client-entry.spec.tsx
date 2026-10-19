@@ -98,7 +98,7 @@ describe('Git view actions', () => {
 
 describe('Workspace Worktree icon', () => {
   it('marks linked Workspace folders after host rerenders without changing Session icons', async () => {
-    vi.spyOn(api, 'gitWorktreeLinked').mockImplementation(async path => ({ linked: path === '/linked' }))
+    vi.spyOn(api, 'gitWorktreeLinked').mockImplementation(async path => path === '/linked' ? { linked: true, main: '/main' } : { linked: false })
     const items = [
       { workspaceId: 'linked', path: '/linked' },
       { workspaceId: 'regular', path: '/regular' },
@@ -141,6 +141,52 @@ describe('Workspace Worktree icon', () => {
       expect(replacement.firstElementChild?.hasAttribute('data-git-worktree-folder')).toBe(false)
     } finally {
       host.remove()
+    }
+  })
+
+  it('orders Worktree groups right after their main checkout group and indents them', async () => {
+    vi.spyOn(api, 'gitWorktreeLinked').mockImplementation(async path =>
+      path.startsWith('/repo-') ? { linked: true, main: '/repo' } : { linked: false })
+    const items = ['repo', 'repo-01', 'repo-02', 'other', 'folder', 'repo-03'].map(id => ({ workspaceId: id, path: `/${id}` }))
+    const ctx = {
+      effect,
+      locale: { register: () => () => {}, subscribe: () => () => {}, getSnapshot: () => ({ active: 'zh' }) },
+      sidebarRightTabs: { register: () => () => {} },
+      workspaces: { list: { getSnapshot: () => ({ items }), subscribe: () => () => {} } },
+      slots: { inject: (_name: string, register: () => () => void) => register(), register: () => () => {} },
+    }
+    // The host's group: a header row (wrapped like its hover card anchor) followed by its Session rows.
+    const section = (id: string) => {
+      const group = document.createElement('div')
+      group.innerHTML = `<span><div data-row-key="workspace:${id}"><span><svg></svg></span></div></span><div data-row-key="session:${id}"></div>`
+      return group
+    }
+    const tree = document.createElement('div')
+    tree.setAttribute('role', 'tree')
+    const [wt1, other, repo, wt2, folder] = [section('repo-01'), section('other'), section('repo'), section('repo-02'), section('folder')]
+    // The host's tree view nests a group inside an unrelated ancestor; that group stays where the host put it.
+    const nestedByHost = section('repo-03')
+    folder.append(nestedByHost)
+    tree.append(wt1, other, repo, wt2, folder)
+    document.body.append(tree)
+    try {
+      apply(ctx as never)
+      await vi.waitFor(() => { expect(wt1.hasAttribute('data-git-worktree-child')).toBe(true) })
+      expect(tree.hasAttribute('data-git-worktree-tree')).toBe(true)
+      expect([wt1, other, repo, wt2, folder].map(group => group.style.order)).toEqual(['5', '2', '4', '5', '8'])
+      expect(wt2.hasAttribute('data-git-worktree-child')).toBe(true)
+      expect(nestedByHost.hasAttribute('data-git-worktree-child')).toBe(false)
+      expect(nestedByHost.style.order).toBe('')
+      // The host moves the main checkout's group to the top; its Worktrees follow.
+      tree.prepend(repo)
+      await vi.waitFor(() => { expect(repo.style.order).toBe('0') })
+      expect([wt1, other, wt2].map(group => group.style.order)).toEqual(['1', '4', '1'])
+      for (const dispose of disposers.splice(0).reverse()) dispose()
+      expect(tree.hasAttribute('data-git-worktree-tree')).toBe(false)
+      expect([wt1, other, repo, wt2, folder].map(group => group.style.order)).toEqual(['', '', '', '', ''])
+      expect(wt1.hasAttribute('data-git-worktree-child')).toBe(false)
+    } finally {
+      tree.remove()
     }
   })
 })

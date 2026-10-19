@@ -102,18 +102,55 @@ export function apply(ctx: Context): void {
   }
   ctx.effect(() => {
     // ponytail: these host rows have no icon slot; recheck this DOM seam if the host changes its row markup.
-    const linkedByPath = new Map<string, boolean>()
+    // Main checkout path for linked Worktrees, null for everything else.
+    const mainByPath = new Map<string, string | null>()
     const checking = new Set<string>()
     const rowSelector = '[data-row-key^="workspace:"]'
     let live = true
+    const clearNesting = (section: HTMLElement) => {
+      section.removeAttribute('data-git-worktree-child')
+      section.style.removeProperty('order')
+    }
+    // ponytail: nesting is visual only (flex `order`), so DOM order still drives drag targets and the host's
+    // tree semantics, a host reorder glides to the stale order then snaps, and folding the main group leaves its
+    // Worktree groups shown; it applies only to top-level groups ("By workspace") whose main checkout is itself a Workspace.
+    const nest = (sectionById: Map<string, HTMLElement>, pathById: Map<string, string>, idByPath: Map<string, string>) => {
+      const nested = new Set<Element>()
+      for (const [id, section] of sectionById) {
+        const main = mainByPath.get(pathById.get(id)!)
+        const parent = typeof main === 'string' ? sectionById.get(idByPath.get(main) ?? '') : undefined
+        if (parent === undefined || parent.parentElement !== section.parentElement) { clearNesting(section); continue }
+        section.setAttribute('data-git-worktree-child', '')
+        // A Worktree sorts right after its main checkout; equal orders keep sibling Worktrees in host order.
+        section.style.order = String(2 * [...parent.parentElement!.children].indexOf(parent) + 1)
+        nested.add(parent.parentElement!)
+      }
+      for (const tree of document.querySelectorAll<HTMLElement>('[data-git-worktree-tree]')) {
+        if (nested.has(tree)) continue
+        tree.removeAttribute('data-git-worktree-tree')
+        for (const section of tree.children) if (section instanceof HTMLElement) clearNesting(section)
+      }
+      for (const tree of nested) {
+        tree.setAttribute('data-git-worktree-tree', '')
+        ;[...tree.children].forEach((section, index) => {
+          if (section instanceof HTMLElement && !section.hasAttribute('data-git-worktree-child')) section.style.order = String(2 * index)
+        })
+      }
+    }
     const sync = () => {
       const workspaces = ctx.workspaces.list.getSnapshot().items
       const pathById = new Map<string, string>(workspaces.map(workspace => [workspace.workspaceId, workspace.path]))
+      const idByPath = new Map<string, string>(workspaces.map(workspace => [workspace.path, workspace.workspaceId]))
+      const sectionById = new Map<string, HTMLElement>()
       for (const row of document.querySelectorAll<HTMLElement>(rowSelector)) {
+        const id = row.dataset.rowKey!.slice('workspace:'.length)
+        // The top-level group this row heads; a group nested by the host's tree view finds its ancestor's header first.
+        const section = row.closest<HTMLElement>('[role="tree"] > *')
+        if (section !== null && section.querySelector(rowSelector) === row && pathById.has(id)) sectionById.set(id, section)
         const folder = row.firstElementChild
         if (!(folder instanceof HTMLElement)) continue
-        const path = pathById.get(row.dataset.rowKey!.slice('workspace:'.length))
-        if (path !== undefined && linkedByPath.get(path) === true) {
+        const path = pathById.get(id)
+        if (path !== undefined && typeof mainByPath.get(path) === 'string') {
           folder.setAttribute('data-git-worktree-folder', '')
           folder.setAttribute('role', 'img')
           folder.setAttribute('aria-label', t('worktreeMark'))
@@ -125,10 +162,11 @@ export function apply(ctx: Context): void {
           folder.removeAttribute('title')
         }
       }
+      nest(sectionById, pathById, idByPath)
       for (const { path } of workspaces) {
-        if (linkedByPath.has(path) || checking.has(path)) continue
+        if (mainByPath.has(path) || checking.has(path)) continue
         checking.add(path)
-        void api.gitWorktreeLinked(path).then(({ linked }) => { linkedByPath.set(path, linked) }, () => { linkedByPath.set(path, false) })
+        void api.gitWorktreeLinked(path).then(({ main }) => { mainByPath.set(path, main ?? null) }, () => { mainByPath.set(path, null) })
           .finally(() => { checking.delete(path); if (live) sync() })
       }
     }
@@ -145,6 +183,7 @@ export function apply(ctx: Context): void {
       observer.disconnect()
       unsubscribeWorkspaces()
       unsubscribeLocale()
+      nest(new Map(), new Map(), new Map())
       for (const folder of document.querySelectorAll('[data-git-worktree-folder]')) {
         folder.removeAttribute('data-git-worktree-folder')
         folder.removeAttribute('role')

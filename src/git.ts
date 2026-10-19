@@ -507,13 +507,15 @@ export async function worktrees(cwd: string): Promise<GitWorktree[]> {
   return parseWorktreePorcelainZ(raw).map(entry => ({ ...entry, current: entry.path === root }))
 }
 
-/** True inside a linked checkout; false for the main checkout or outside a repository. */
-export async function isLinkedWorktree(cwd: string): Promise<boolean> {
+/** The main checkout's canonical path inside a linked checkout; undefined for the main checkout or outside a repository. */
+export async function linkedWorktreeMain(cwd: string): Promise<string | undefined> {
   try {
     const [gitDir, commonDir] = (await runGit(cwd, ['rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir'])).trim().split('\n')
-    return gitDir !== commonDir
+    if (gitDir === commonDir) return undefined
+    const main = dirname(commonDir!)
+    return existsSync(main) ? realpathSync(main) : main
   } catch {
-    return false
+    return undefined
   }
 }
 
