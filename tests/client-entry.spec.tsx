@@ -111,7 +111,7 @@ describe('Git view actions', () => {
     render()
     expect(view.props!.scope.cwd).toBe('/repo/wt-old')
     switchDirectory.mockRejectedValueOnce(new SidebarApiError('method-error', 'unavailable'))
-    await expect(view.props!.onOpenWorktree('/repo/wt-new')).rejects.toThrow('当前 DSH 版本不支持切换会话工作目录')
+    await expect(view.props!.onOpenWorktree('/repo/wt-new')).rejects.toThrow('当前 DSH 或 Harness 插件不支持切换会话工作目录')
     switchDirectory.mockRejectedValueOnce(new Error('directory unavailable'))
     await expect(view.props!.onOpenWorktree('/repo/wt-new')).rejects.toThrow('directory unavailable')
     expect(createSession).not.toHaveBeenCalled()

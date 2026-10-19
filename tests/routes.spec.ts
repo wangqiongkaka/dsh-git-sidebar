@@ -16,6 +16,7 @@ let url: string
 const host = new CordisContext()
 let connection: HostConnectionService
 let disposeConnection: () => Promise<void>
+let hostContext: Context
 const directoryBySession = new WeakMap<object, string>()
 const sessions = new Map<string, { header: { cwd: string } }>()
 let directoryAvailable = true
@@ -78,6 +79,7 @@ beforeAll(async () => {
     } },
     connection,
   } as unknown as Context
+  hostContext = ctx
   apply(ctx, { readLimit: 1024 })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
   const address = server.address()
@@ -140,6 +142,27 @@ it('switches only the current Session to a registered Worktree and uses it for l
     git('branch', '-d', 'feat/session')
   }
 })
+it('switches external Harness directories through the Harness service and rejects older unsupported providers', async () => {
+  const changeWorkingDirectory = vi.fn(async (_id: string, input: { path: string }) => {
+    directoryBySession.set(sessions.get('test')!, input.path)
+    return { cwd: input.path }
+  })
+  const harnesses = vi.fn(async () => ({ test: { harness: 'codex' } }))
+  hostContext.harness = { changeWorkingDirectory, harnesses }
+  try {
+    expect((await call('git.worktree-open', { path: root })).body.value).toEqual({ path: root })
+    expect(changeWorkingDirectory).toHaveBeenCalledWith('test', { path: root })
+    hostContext.harness = { harnesses }
+    const unsupported = await call('git.worktree-open', { path: root })
+    expect(unsupported.body.error.code).toBe('method-error')
+    expect(unsupported.status).toBe(400)
+    harnesses.mockResolvedValue({ test: { harness: 'dsh' } })
+    expect((await call('git.worktree-open', { path: root })).body.value.path).toBe(root)
+  } finally {
+    delete hostContext.harness
+    directoryBySession.delete(sessions.get('test')!)
+  }
+})
 it('keeps failures explicit and rejects cross-site requests and option injection', async () => {
   for (const [method, payload] of [
     ['git.checkout', { branch: '--orphan=bad' }], ['git.revert', { hash: '--all' }],
@@ -178,7 +201,7 @@ it('uses the current Connection services and routes the real client status reque
     expect(await clientApi.gitWorktrees({ sessionId: 'test' })).toHaveProperty('entries')
     expect(await clientApi.gitStashList({ sessionId: 'test' })).toEqual({ entries: [] })
     expect(await clientApi.gitTags({ sessionId: 'test' })).toEqual({ entries: [] })
-    expect(inject).toEqual({ sessions: { required: true }, agents: { required: true }, connection: { required: true }, sessionController: { required: true }, workingDirectory: { required: false } })
+    expect(inject).toEqual({ sessions: { required: true }, agents: { required: true }, connection: { required: true }, sessionController: { required: true }, workingDirectory: { required: false }, harness: { required: false } })
   } finally { vi.unstubAllGlobals() }
 })
 it('keeps Connection authentication and bounded JSON parsing', async () => {
