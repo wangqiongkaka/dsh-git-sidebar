@@ -12,5 +12,9 @@ export type Context = CordisContext & {
   agents: { get(id: string): HostAgent | undefined }
   sessionController: { resolveAgent(id: string): Promise<{ agent: HostAgent } | { error: Error }> }
   workingDirectory?: WorkingDirectory
+  harness?: {
+    harnesses(input: { sessionIds: string[] }): Promise<Record<string, { harness: string }>>
+    changeWorkingDirectory?(id: string, input: { path: string }): Promise<{ cwd: string }>
+  }
   connection: HostConnectionHandle
 }

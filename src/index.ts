@@ -8,7 +8,7 @@ import { readJsonBody, requireString, SidebarError, errorResponse, okResponse } 
 export const name = 'dsh-git-sidebar'
 export const inject = {
   sessions: { required: true }, agents: { required: true }, connection: { required: true },
-  sessionController: { required: true }, workingDirectory: { required: false },
+  sessionController: { required: true }, workingDirectory: { required: false }, harness: { required: false },
 }
 export const Config = Schema.object({ readLimit: Schema.number().min(1).default(2 * 1024 * 1024) })
 function requireAbsolute(path: string): string {
@@ -342,6 +342,12 @@ export function buildApi(
       const paths = await Promise.all(entries.map(entry => realpath(entry.path).catch(() => undefined)))
       if (!paths.includes(path)) {
         throw new SidebarError('bad-request', 'unknown target worktree')
+      }
+      if (ctx.harness?.changeWorkingDirectory) {
+        return { path: (await ctx.harness.changeWorkingDirectory(sessionId, { path })).cwd }
+      }
+      if (ctx.harness && (await ctx.harness.harnesses({ sessionIds: [sessionId] }))[sessionId]?.harness !== 'dsh') {
+        throw new SidebarError('method-error', 'Harness working-directory changes are unavailable')
       }
       const result = await ctx.sessionController.resolveAgent(sessionId)
       if ('error' in result) throw result.error
