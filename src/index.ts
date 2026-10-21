@@ -342,8 +342,7 @@ export function buildApi(
     },
     'git.worktree-remove': async (payload) => {
       const { cwd } = cwdOf(payload)
-      await git.removeWorktree(cwd, requireString(payload, 'path'))
-      return { ok: true }
+      return { path: await git.removeWorktree(cwd, requireString(payload, 'path')) }
     },
     'git.operation': async (payload) => {
       const { cwd } = cwdOf(payload)

@@ -547,8 +547,12 @@ export async function mergeWorktree(cwd: string, targetPath: string, sourceBranc
 }
 
 /** Remove a clean linked checkout; git refuses dirty/current/locked trees. */
-export async function removeWorktree(cwd: string, path: string): Promise<void> {
+/** Returns the canonical path it had, so the caller can drop the DSH Workspace registered for it. */
+export async function removeWorktree(cwd: string, path: string): Promise<string> {
+  const absolute = resolve(cwd, path)
+  const canonical = existsSync(absolute) ? realpathSync(absolute) : absolute
   await runGit(cwd, ['worktree', 'remove', '--', path])
+  return canonical
 }
 
 /** In-progress history operation for conflict recovery controls. */

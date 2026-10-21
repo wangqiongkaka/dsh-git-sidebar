@@ -248,6 +248,8 @@ export function GitView(props: {
   onOpenFile: (path: string) => void | Promise<void>
   /** Register the Worktree as a DSH Workspace, create a session, and open it. */
   onOpenWorktree: (path: string) => Promise<void>
+  /** Called with the canonical path after a Worktree is removed. */
+  onWorktreeRemoved: (path: string) => Promise<void>
   /** Open a diff modal. */
   onOpenDiff: (tab: SidebarTab) => void
   /** Queue a text prompt into the session's chat (history row "add to chat" / "explain"). */
@@ -257,7 +259,7 @@ export function GitView(props: {
 }
 
 function GitViewContent(props: Parameters<typeof GitView>[0]) {
-  const { scope, onOpenFile, onOpenDiff, onOpenWorktree, onPrompt } = props
+  const { scope, onOpenFile, onOpenDiff, onOpenWorktree, onWorktreeRemoved, onPrompt } = props
   const memory = memoryFor(scope)
   const snapshot = memory.snapshot
   const viewId = useId()
@@ -796,7 +798,7 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
     setCommitError(null)
     try {
       await api.gitWorktreeMerge(scope, target.path, entry.branch)
-      if (remove) await api.gitWorktreeRemove(scope, entry.path)
+      if (remove) await onWorktreeRemoved((await api.gitWorktreeRemove(scope, entry.path)).path)
     } catch (reason) {
       setCommitError(reason instanceof Error ? reason.message : String(reason))
     } finally {
@@ -1898,7 +1900,7 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
                     title: t('worktreeRemoveTitle'),
                     description: t('worktreeRemoveDesc', { path: entry.path }),
                     confirmLabel: t('worktreeRemove'),
-                    onConfirm: () => api.gitWorktreeRemove(scope, entry.path),
+                    onConfirm: async () => { await onWorktreeRemoved((await api.gitWorktreeRemove(scope, entry.path)).path) },
                   })
                 }}
               >

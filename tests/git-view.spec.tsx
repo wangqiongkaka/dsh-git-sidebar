@@ -44,7 +44,8 @@ const flush = async (): Promise<void> => {
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
 }
 
-function renderGitView(cwd = '/repo', onOpenWorktree: (path: string) => Promise<void> = async () => {}): { container: HTMLDivElement; root: Root } {
+function renderGitView(cwd = '/repo', onOpenWorktree: (path: string) => Promise<void> = async () => {},
+  onWorktreeRemoved: (path: string) => Promise<void> = async () => {}): { container: HTMLDivElement; root: Root } {
   const container = document.createElement('div')
   document.body.append(container)
   const root = createRoot(container)
@@ -55,6 +56,7 @@ function renderGitView(cwd = '/repo', onOpenWorktree: (path: string) => Promise<
       onOpenDiff: () => {},
       onPrompt: async () => {},
       onOpenWorktree,
+      onWorktreeRemoved,
     }))
   })
   return { container, root }
@@ -130,7 +132,7 @@ describe('GitView change groups', () => {
       act(() => {
         root.render(createElement(GitView, {
           scope: { sessionId: 'session-1', cwd: '/repo' }, onOpenFile: () => {}, onOpenDiff,
-          onPrompt: async () => {}, onOpenWorktree: async () => {},
+          onPrompt: async () => {}, onOpenWorktree: async () => {}, onWorktreeRemoved: async () => {},
         }))
         refs.firstElementChild!.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
       })
@@ -1206,6 +1208,47 @@ describe('GitView worktree', () => {
       expect(add).toHaveBeenCalledWith({ sessionId: 'session-1', cwd: '/repo' }, 'feat-x', 'feat-x', 'main')
       expect(open).toHaveBeenCalledWith('/real/repo-worktrees/feat-x')
       expect(document.querySelector('input[aria-label="New branch name"], input[aria-label="新分支名称"]')).toBeNull()
+    } finally {
+      act(() => { root.unmount() })
+      container.remove()
+    }
+  })
+
+  // WHY: a removed Worktree's Workspace would linger in the left sidebar pointing at a missing directory.
+  it('cleans up the Workspace at the path git removed after confirming', async () => {
+    vi.spyOn(api, 'gitWorktrees').mockResolvedValue({ pathPrefix: '', entries: [
+      { path: '/repo', head: 'a', branch: 'main', current: true, locked: false, prunable: false },
+      { path: '/repo-worktrees/feat-x', head: 'b', branch: 'feat-x', current: false, locked: false, prunable: false },
+    ] })
+    const remove = vi.spyOn(api, 'gitWorktreeRemove').mockResolvedValue({ path: '/real/repo-worktrees/feat-x' })
+    const removed = vi.fn(async () => {})
+    const { container, root } = renderGitView('/repo', async () => {}, removed)
+    try {
+      await flush()
+      openMoreMenu()
+      act(() => { labelledButton('Git worktrees…', 'Git Worktree…').click() })
+      await flush()
+      const trash = [...document.querySelectorAll<HTMLButtonElement>('button[aria-label="Remove Worktree"], button[aria-label="删除 Worktree"]')].find(button => !button.disabled)!
+      act(() => { trash.click() })
+      await act(async () => { labelledButton('Remove Worktree', '删除 Worktree').click(); await Promise.resolve() })
+      await flush()
+
+      expect(remove).toHaveBeenCalledWith({ sessionId: 'session-1', cwd: '/repo' }, '/repo-worktrees/feat-x')
+      expect(removed).toHaveBeenCalledWith('/real/repo-worktrees/feat-x')
+
+      // "Merge and remove" takes the same cleanup after merging into the target.
+      const merge = vi.spyOn(api, 'gitWorktreeMerge').mockResolvedValue({ ok: true })
+      removed.mockClear()
+      openMoreMenu()
+      act(() => { labelledButton('Git worktrees…', 'Git Worktree…').click() })
+      await flush()
+      const mergeButton = [...document.querySelectorAll<HTMLButtonElement>('button[aria-label="Merge branch"], button[aria-label="合并分支"]')].find(button => !button.disabled)!
+      act(() => { mergeButton.click() })
+      await act(async () => { labelledButton('Merge and remove', '合并并删除').click(); await Promise.resolve() })
+      await flush()
+
+      expect(merge).toHaveBeenCalledWith({ sessionId: 'session-1', cwd: '/repo' }, '/repo', 'feat-x')
+      expect(removed).toHaveBeenCalledWith('/real/repo-worktrees/feat-x')
     } finally {
       act(() => { root.unmount() })
       container.remove()

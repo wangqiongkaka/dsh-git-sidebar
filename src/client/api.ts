@@ -230,7 +230,7 @@ export const api = {
   gitWorktreeMerge: (scope: SessionScope, targetPath: string, sourceBranch: string) =>
     call<{ ok: true }>('git.worktree-merge', scopePayload(scope, { targetPath, sourceBranch })),
   gitWorktreeRemove: (scope: SessionScope, path: string) =>
-    call<{ ok: true }>('git.worktree-remove', scopePayload(scope, { path })),
+    call<{ path: string }>('git.worktree-remove', scopePayload(scope, { path })),
   gitOperation: (scope: SessionScope, signal?: AbortSignal) =>
     call<{ operation: GitOperation | null }>('git.operation', scopePayload(scope, {}), signal),
   gitOperationContinue: (scope: SessionScope, operation: GitOperation) =>

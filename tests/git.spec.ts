@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
 import { alignDiffLines, parseUnifiedDiff } from '../src/client/DiffView.tsx'
 import { defaultWorktreeDraft } from '../src/client/GitView.tsx'
-import { addWorktree, linkedWorktreeMain, branchDelete, branchDeleteRemote, branchOverview, branchPrune, branches, createTag, deleteTag, discard, discardAll, fastForward, parseLogLines, parsePorcelainZ, pushTag, rebase, resetToUpstream, stash, stashList, stashPop, status, tags, wipCommit, wipUndo } from '../src/git.ts'
+import { addWorktree, linkedWorktreeMain, removeWorktree, branchDelete, branchDeleteRemote, branchOverview, branchPrune, branches, createTag, deleteTag, discard, discardAll, fastForward, parseLogLines, parsePorcelainZ, pushTag, rebase, resetToUpstream, stash, stashList, stashPop, status, tags, wipCommit, wipUndo } from '../src/git.ts'
 
 describe('git worktree defaults', () => {
   it('creates a new branch draft based on the current branch', () => {
@@ -215,6 +215,9 @@ describe('discard all changes', () => {
       expect(await linkedWorktreeMain(join(path, 'nested'))).toBe(realpathSync(repo))
       expect(await linkedWorktreeMain(repo)).toBeUndefined()
       expect(await linkedWorktreeMain(dir)).toBeUndefined()
+      // Removal reports the same canonical path, which is how its Workspace is found.
+      expect(await removeWorktree(repo, '../wt')).toBe(path)
+      expect(existsSync(path)).toBe(false)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

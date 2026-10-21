@@ -7,7 +7,7 @@ import { apply } from '../src/client/index.tsx'
 import { api, type SessionScope } from '../src/client/api.ts'
 import type { SidebarTab } from '../src/client/state.ts'
 
-const view = vi.hoisted(() => ({ props: undefined as undefined | { scope: SessionScope; onOpenWorktree(path: string): Promise<void>; onOpenDiff(tab: SidebarTab): void } }))
+const view = vi.hoisted(() => ({ props: undefined as undefined | { scope: SessionScope; onOpenWorktree(path: string): Promise<void>; onWorktreeRemoved(path: string): Promise<void>; onOpenDiff(tab: SidebarTab): void } }))
 vi.mock('../src/client/GitView.tsx', () => ({ GitView: (props: typeof view.props) => { view.props = props; return null } }))
 vi.mock('../src/client/DiffTab.tsx', () => ({ DiffTab: ({ diff }: { diff: { path?: string } }) => <div>{diff.path}</div> }))
 
@@ -69,12 +69,16 @@ describe('Git view actions', () => {
     const workspaceSessions: Record<string, string[]> = { '/repo/wt-old': ['old'], '/repo/wt-new': ['sub'] }
     const createWorkspace = vi.fn(async ({ path }: { path: string }) => ({ workspaceId: `ws:${path}`, sessionIds: workspaceSessions[path] ?? [] }))
     const createSession = vi.fn(async () => 'created')
+    const deleteWorkspace = vi.fn(async () => {})
     const ctx = {
       effect,
       locale: { register: () => () => {}, subscribe: () => () => {}, getSnapshot: () => ({ active: 'zh' }) },
       sidebarRightTabs: { register: () => () => {} },
       sessions: { list: { getSnapshot: () => ({ byId }) }, create: createSession },
-      workspaces: { ...emptyWorkspaces, create: createWorkspace },
+      workspaces: {
+        list: { getSnapshot: () => ({ items: [{ workspaceId: 'ws:/repo/wt-old', path: '/repo/wt-old' }] }), subscribe: () => () => {} },
+        create: createWorkspace, delete: deleteWorkspace,
+      },
       uiWorkspace: { openSession: (id: string) => { opened.push(id) } },
       slots: {
         inject: (_name: string, register: () => () => void) => register(),
@@ -101,6 +105,10 @@ describe('Git view actions', () => {
     expect(opened).toEqual(['old', 'created', 'created'])
     expect(createWorkspace.mock.calls).toEqual([[{ path: '/repo/wt-old' }], [{ path: '/repo/wt-new' }], [{ path: '/repo/wt-archived' }]])
     expect(createSession.mock.calls).toEqual([[{ workspaceId: 'ws:/repo/wt-new' }], [{ workspaceId: 'ws:/repo/wt-archived' }]])
+    // Removing a Worktree drops the Workspace registered at its path; a path without one is left alone.
+    await view.props!.onWorktreeRemoved('/repo/wt-old')
+    await view.props!.onWorktreeRemoved('/repo/wt-gone')
+    expect(deleteWorkspace.mock.calls).toEqual([['ws:/repo/wt-old']])
     byId.current.projectionValues.workingDirectory = '/repo/wt-old'
     render()
     expect(view.props!.scope).toEqual({ sessionId: 'current', cwd: '/repo/wt-old' })

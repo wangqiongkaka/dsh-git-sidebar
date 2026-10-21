@@ -78,6 +78,11 @@ export function apply(ctx: Context): void {
         const id = await ctx.sessions.create({ workspaceId: workspace.workspaceId })
         ctx.uiWorkspace.openSession(id)
       }}
+      onWorktreeRemoved={async path => {
+        // Like the host's own Workspace removal: only the registration goes, its Sessions stay on disk.
+        const workspace = ctx.workspaces.list.getSnapshot().items.find(item => item.path === path)
+        if (workspace !== undefined) await ctx.workspaces.delete(workspace.workspaceId)
+      }}
     />
       <Modal open={openDiff !== null} onClose={() => { setOpenDiff(null) }} title={t('viewDiff')} closeLabel={t('close')}
         className={css.gitDiffModal} contentClassName={css.gitDiffModalContent}>
