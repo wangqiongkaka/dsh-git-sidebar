@@ -63,8 +63,11 @@ describe('Git view actions', () => {
       current: { id: 'current', cwd: '/repo', origin: 'user', projectionValues: {} as Record<string, unknown> },
       old: { id: 'old', cwd: '/repo/wt-old', origin: 'user' },
       sub: { id: 'sub', cwd: '/repo/wt-new', origin: 'subagent' },
+      archived: { id: 'archived', cwd: '/repo/wt-archived', origin: 'user' },
     }
-    const createWorkspace = vi.fn(async ({ path }: { path: string }) => ({ workspaceId: `ws:${path}` }))
+    // Archived sessions keep their cwd but leave every Workspace's session list.
+    const workspaceSessions: Record<string, string[]> = { '/repo/wt-old': ['old'], '/repo/wt-new': ['sub'] }
+    const createWorkspace = vi.fn(async ({ path }: { path: string }) => ({ workspaceId: `ws:${path}`, sessionIds: workspaceSessions[path] ?? [] }))
     const createSession = vi.fn(async () => 'created')
     const ctx = {
       effect,
@@ -94,10 +97,10 @@ describe('Git view actions', () => {
     expect(view.props!.scope).toEqual({ sessionId: 'current', cwd: '/repo' })
     await view.props!.onOpenWorktree('/repo/wt-old')
     await view.props!.onOpenWorktree('/repo/wt-new')
-    expect(opened).toEqual(['old', 'created'])
-    expect(createWorkspace).toHaveBeenCalledTimes(1)
-    expect(createWorkspace).toHaveBeenCalledWith({ path: '/repo/wt-new' })
-    expect(createSession).toHaveBeenCalledWith({ workspaceId: 'ws:/repo/wt-new' })
+    await view.props!.onOpenWorktree('/repo/wt-archived')
+    expect(opened).toEqual(['old', 'created', 'created'])
+    expect(createWorkspace.mock.calls).toEqual([[{ path: '/repo/wt-old' }], [{ path: '/repo/wt-new' }], [{ path: '/repo/wt-archived' }]])
+    expect(createSession.mock.calls).toEqual([[{ workspaceId: 'ws:/repo/wt-new' }], [{ workspaceId: 'ws:/repo/wt-archived' }]])
     byId.current.projectionValues.workingDirectory = '/repo/wt-old'
     render()
     expect(view.props!.scope).toEqual({ sessionId: 'current', cwd: '/repo/wt-old' })

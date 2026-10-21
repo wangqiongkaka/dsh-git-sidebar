@@ -69,9 +69,12 @@ export function apply(ctx: Context): void {
         if (!result.ok) throw new Error(result.error.message)
       }}
       onOpenWorktree={async path => {
-        const existing = Object.values(ctx.sessions.list.getSnapshot().byId).find(session => session.cwd === path && session.origin !== 'subagent')
-        if (existing !== undefined) { ctx.uiWorkspace.openSession(existing.id); return }
+        // Returns the existing Workspace. Its session list, not a cwd match, decides reuse:
+        // archived sessions and those of a removed Workspace keep their cwd but appear in no Workspace.
         const workspace = await ctx.workspaces.create({ path })
+        const { byId } = ctx.sessions.list.getSnapshot()
+        const existing = workspace.sessionIds.find(id => byId[id]?.origin !== 'subagent')
+        if (existing !== undefined) { ctx.uiWorkspace.openSession(existing); return }
         const id = await ctx.sessions.create({ workspaceId: workspace.workspaceId })
         ctx.uiWorkspace.openSession(id)
       }}
