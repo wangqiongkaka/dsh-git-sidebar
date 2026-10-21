@@ -1,5 +1,5 @@
 /** Independent Git operations for the DSH right sidebar. */
-import { open, realpath, stat } from 'node:fs/promises'
+import { open, stat } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
 import Schema from 'schemastery'
 import type { Context } from './context-types.ts'
@@ -8,7 +8,7 @@ import { readJsonBody, requireString, SidebarError, errorResponse, okResponse } 
 export const name = 'dsh-git-sidebar'
 export const inject = {
   sessions: { required: true }, agents: { required: true }, connection: { required: true },
-  sessionController: { required: true }, workingDirectory: { required: false }, harness: { required: false },
+  workingDirectory: { required: false },
 }
 export const Config = Schema.object({ readLimit: Schema.number().min(1).default(2 * 1024 * 1024) })
 function requireAbsolute(path: string): string {
@@ -334,26 +334,6 @@ export function buildApi(
       const { cwd } = cwdOf(payload)
       const record = payload as { base?: unknown }
       return { path: await git.addWorktree(cwd, requireString(payload, 'path'), requireRevision(payload, 'branch'), record.base === undefined ? undefined : requireRevision(payload, 'base')) }
-    },
-    'git.worktree-open': async (payload) => {
-      const { sessionId, cwd } = cwdOf(payload)
-      const path = await realpath(requireAbsolute(requireString(payload, 'path')))
-      const entries = await git.worktrees(cwd)
-      const paths = await Promise.all(entries.map(entry => realpath(entry.path).catch(() => undefined)))
-      if (!paths.includes(path)) {
-        throw new SidebarError('bad-request', 'unknown target worktree')
-      }
-      if (ctx.harness?.changeWorkingDirectory) {
-        return { path: (await ctx.harness.changeWorkingDirectory(sessionId, { path })).cwd }
-      }
-      if (ctx.harness && (await ctx.harness.harnesses({ sessionIds: [sessionId] }))[sessionId]?.harness !== 'dsh') {
-        throw new SidebarError('method-error', 'Harness working-directory changes are unavailable')
-      }
-      const result = await ctx.sessionController.resolveAgent(sessionId)
-      if ('error' in result) throw result.error
-      const directory = result.agent.ctx.get('workingDirectory')
-      if (directory === undefined) throw new SidebarError('method-error', 'session working-directory changes are unavailable')
-      return { path: await directory.set(result.agent, path) }
     },
     'git.worktree-merge': async (payload) => {
       const { cwd } = cwdOf(payload)

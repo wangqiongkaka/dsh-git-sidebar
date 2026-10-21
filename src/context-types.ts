@@ -5,16 +5,10 @@ type HostSession = { header: { cwd?: string } }
 type HostAgent = { session: HostSession; ctx: { get(name: 'workingDirectory'): WorkingDirectory | undefined } }
 interface WorkingDirectory {
   get(session: HostSession): string
-  set(agent: HostAgent, path: string): Promise<string>
 }
 export type Context = CordisContext & {
   sessions: { get(id: string): HostSession | undefined }
   agents: { get(id: string): HostAgent | undefined }
-  sessionController: { resolveAgent(id: string): Promise<{ agent: HostAgent } | { error: Error }> }
   workingDirectory?: WorkingDirectory
-  harness?: {
-    harnesses(input: { sessionIds: string[] }): Promise<Record<string, { harness: string }>>
-    changeWorkingDirectory?(id: string, input: { path: string }): Promise<{ cwd: string }>
-  }
   connection: HostConnectionHandle
 }

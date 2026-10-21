@@ -7,18 +7,19 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type {} from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import { IconBranchOutlineRegular, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import { sessionFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
 import { GitView } from './GitView.tsx'
 import { DiffTab } from './DiffTab.tsx'
-import { api, SidebarApiError } from './api.ts'
+import { api } from './api.ts'
 import { attachLocale, en, LOCALE_NS, t, zh } from './locales.ts'
 import { parseDiffAddress, diffTitle } from './navigation.ts'
 import type { SidebarDiffRef } from './state.ts'
 import css from './sidebar.module.css'
 
-export const inject = ['slots', 'locale', 'sidebarRightTabs', 'sessions', 'workspaces']
+export const inject = ['slots', 'locale', 'sidebarRightTabs', 'sessions', 'workspaces', 'uiWorkspace']
 
 function sessionDirectory(session: { cwd?: string; projectionValues?: object } | undefined): string | undefined {
   const values = session?.projectionValues
@@ -68,13 +69,11 @@ export function apply(ctx: Context): void {
         if (!result.ok) throw new Error(result.error.message)
       }}
       onOpenWorktree={async path => {
-        try {
-          await api.gitWorktreeOpen(scope, path)
-          setOpenDiff(null)
-        } catch (error) {
-          if (error instanceof SidebarApiError && error.code === 'method-error') throw new Error(t('worktreeSessionUnsupported'))
-          throw error
-        }
+        const existing = Object.values(ctx.sessions.list.getSnapshot().byId).find(session => session.cwd === path && session.origin !== 'subagent')
+        if (existing !== undefined) { ctx.uiWorkspace.openSession(existing.id); return }
+        const workspace = await ctx.workspaces.create({ path })
+        const id = await ctx.sessions.create({ workspaceId: workspace.workspaceId })
+        ctx.uiWorkspace.openSession(id)
       }}
     />
       <Modal open={openDiff !== null} onClose={() => { setOpenDiff(null) }} title={t('viewDiff')} closeLabel={t('close')}
