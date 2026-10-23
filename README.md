@@ -19,13 +19,13 @@
 - 自动刷新：面板可见时每 5 秒静默重读状态，窗口获焦或标签页切回前台时立即刷新；重新打开时先显示同一会话、工作目录的上次数据，再后台更新。首次打开的变更列表不等待历史等辅助查询，远端 Tag 独立更新。刷新和切回标签页都保留折叠状态、滚动位置和已加载的历史分页。
 - 请求入口：所有 Git 操作经宿主已认证的 `/api/git-sidebar/*` 路由，适配桌面 Web 和手机远程入口；不再依赖已移除的 `webRuntime` 服务，避免面板加载时出现 `HTTP 405`。
 - 每个区域独立滚动并限制最大高度；变更、Stash、Tag、历史列表到达顶部或底部后继续上下拉时产生带阻尼的回弹，支持滚轮、触控板和触摸，松手或停止滚动后自动回位；标题和提交框保持固定，系统开启「减少动态效果」时关闭回弹。
-- 引导页入口：右侧边栏引导页的「源代码管理」卡片由本插件提供，显示本插件的名称，点击直接打开 Git 标签。
+- 引导页入口：右侧边栏引导页的「源代码管理」入口直接使用宿主原生卡片，图标、标题、圆角、边框和悬停效果与原生入口一致，不再附带插件来源文字；点击直接打开 Git 标签。
 
 差异按会话、文件、提交或提交区间分别打开标签页，布局与分屏由 DSH 管理；文件通过 DSH 文件预览器打开，`.html` / `.htm` 由 DSH 内置的 HTML 预览器在脚本可执行的隔离 iframe 中渲染，同目录的相对资源随文档一并加载。远端操作使用本机已有的 Git 认证和身份。
 
 ## 安装
 
-本插件需要宿主提供 `connection.fetch.register`、`Regular` 图标导出，`sidebarRightTabs`、`sidebar.right.pane.tab` 和 `sidebar.right.tab.guide.entry` 接口，以及打开 Worktree 时使用的 `workspaces.create`、`sessions.create` 和 `uiWorkspace.openSession`，以及删除 Worktree 时使用的 `workspaces.delete`。宿主的 `workingDirectory` 服务及会话列表中的 `workingDirectory` 投影为可选，缺少时按会话原始目录工作。开发依赖的 `link:` 指向相邻的 `deepseek-harness` 目录；目录位置不同时需先调整开发链接，打包产物不依赖该路径。
+本插件需要宿主提供 `connection.fetch.register`、`Regular` 图标导出，`sidebarRightTabs`、`sidebar.right.pane.tab` 接口，以及打开 Worktree 时使用的 `workspaces.create`、`sessions.create` 和 `uiWorkspace.openSession`，以及删除 Worktree 时使用的 `workspaces.delete`。宿主的 `workingDirectory` 服务及会话列表中的 `workingDirectory` 投影为可选，缺少时按会话原始目录工作。开发依赖的 `link:` 指向相邻的 `deepseek-harness` 目录；目录位置不同时需先调整开发链接，打包产物不依赖该路径。
 
 在插件目录安装依赖并打包：
 
@@ -59,7 +59,9 @@ pnpm dsh plugin --profile web add file:/绝对路径/dsh-git-sidebar-0.1.11.tgz
 
 Worktree 路由测试使用真实 HTTP 通道和临时 Git 仓库，目录服务使用测试替身，验证宿主记录的会话目录指向 Worktree 时，状态 / Add / 差异 / 文件路径都在该目录执行、客户端旧目录不能覆盖、其他会话保持主分支。组件测试覆盖打开工作区下已有的会话、跳过子 Agent 会话、同目录只有已归档会话时新建会话、为新 Worktree 新建工作区和会话并跳转、确认删除或「合并并删除」后按 Git 返回的规范路径移除对应工作区（无对应工作区时不处理）、目录投影更新面板作用域，以及差异弹窗的打开与关闭。
 
-未重新安装到 DSH profile，也未在运行中的 DSH 里实测新建工作区、跳转会话与删除后移除工作区；未修改宿主。本次沿用原有界面结构。
+入口注册测试确认沿用原有标题、描述及分支图标，且不再覆盖宿主卡片。使用宿主真实 GuideBody 组件和主题样式进行本地无界面预览，已核对手机深色、桌面浅色和带描述状态：卡片尺寸、圆角、边框及字体与相邻原生卡片一致，手机宽度无横向溢出，点击按原行为替换当前标签页；页面无脚本错误。
+
+未重新安装到 DSH profile，未在运行中的 DSH 或真实手机里实测本次入口样式；未修改宿主。pnpm 的脚本前依赖自动检查曾提示非交互终端无法重装依赖，后续检查实际运行并通过；最终类型检查关闭该自动预检查后通过。
 
 其他现有测试覆盖 Connection 认证与跨来源拒绝、JSON 请求上限、参数注入拒绝、临时仓库中的 Git 操作、列表 / 树切换、目录折叠、分支管理、WIP、同步变基、历史加载与回顶、缓存隔离、后台刷新失败和列表回弹。未对用户仓库执行丢弃操作，未实测真实手机、远程隧道、聊天发送或 HTML 预览。
 

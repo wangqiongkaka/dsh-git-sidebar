@@ -2,7 +2,6 @@
 export const zh = {
   git: '源代码管理',
   gitGuideDesc: '查看变更、提交并同步分支',
-  providedBy: '由 dsh-git-sidebar 插件提供',
   worktreeMark: 'Git Worktree 工作区',
   close: '关闭',
   refresh: '刷新',
@@ -217,7 +216,6 @@ export const zh = {
 export const en = {
   git: 'Source Control',
   gitGuideDesc: 'Review changes, commit, and sync branches',
-  providedBy: 'Provided by the dsh-git-sidebar plugin',
   worktreeMark: 'Git Worktree workspace',
   close: 'Close',
   refresh: 'Refresh',

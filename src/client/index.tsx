@@ -98,22 +98,6 @@ export function apply(ctx: Context): void {
     if (value === undefined || value.sessionId !== sessionId) return <p>{t('diffLoadError')}</p>
     return <DiffTab sessionId={sessionId} cwd={cwd} diff={value.diff} />
   }
-  // The guide's card for this tab: the host's capsule, plus the plugin that provides it.
-  function GuideEntry({ kind, title, description, useTabInfo }: PropsRuntime<'sidebar.right.tab.guide.entry'>) {
-    useLanguage()
-    const { tab } = useTabInfo()
-    return <button type="button" className={css.guideEntry} data-sidebar-right-guide-entry={kind}
-      onClick={() => { tab.actions.openTab(kind, { replaceTab: true }) }}>
-      <span className={css.guideIcon}><IconBranchOutlineRegular size={description === undefined ? 22 : 26} /></span>
-      <span className={css.guideText}>
-        <span className={css.guideRow}>
-          <span className={css.guideTitle}>{title}</span>
-          <span className={css.guideLine}>{t('providedBy')}</span>
-        </span>
-        {description !== undefined && <span className={css.guideLine}>{description}</span>}
-      </span>
-    </button>
-  }
   ctx.effect(() => {
     // ponytail: these host rows have no icon slot; recheck this DOM seam if the host changes its row markup.
     // Main checkout path for linked Worktrees, null for everything else.
@@ -236,8 +220,5 @@ export function apply(ctx: Context): void {
   )))
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab.title', () => ctx.slots.register(
     { name: 'sidebar.right.pane.tab.title', key: 'dsh-git-sidebar' }, GitTitle,
-  )))
-  ctx.effect(() => ctx.slots.inject('sidebar.right.tab.guide.entry', () => ctx.slots.register(
-    { name: 'sidebar.right.tab.guide.entry', key: 'dsh-git-sidebar' }, GuideEntry,
   )))
 }

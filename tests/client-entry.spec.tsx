@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createElement, type ComponentType } from 'react'
+import type { Context } from '@deepseek-ai/cordis'
 import { createRoot } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
 import { apply } from '../src/client/index.tsx'
@@ -22,36 +23,27 @@ const effect = (run: () => void | (() => void)) => { const dispose = run(); if (
 const emptyWorkspaces = { list: { getSnapshot: () => ({ items: [] }), subscribe: () => () => {} } }
 
 describe('right sidebar guide card', () => {
-  it('names the plugin that provides it and opens the Git tab in place', () => {
-    const cards: Array<{ key?: string; component: ComponentType<Record<string, unknown>> }> = []
+  it('registers native guide metadata without overriding the host card', () => {
+    const registerTab = vi.fn((_definition: Parameters<Context['sidebarRightTabs']['register']>[0]) => () => {})
+    const registerSlot = vi.fn((_options: { name: string }, _component: unknown) => () => {})
     const ctx = {
-      sessions: { list: { getSnapshot: () => ({ byId: {} }) } },
       effect,
       locale: { register: () => () => {}, subscribe: () => () => {}, getSnapshot: () => ({ active: 'zh' }) },
-      sidebarRightTabs: { register: () => () => {} },
+      sidebarRightTabs: { register: registerTab },
       workspaces: emptyWorkspaces,
       slots: {
         inject: (_name: string, register: () => () => void) => register(),
-        register(options: { name: string; key?: string }, component: ComponentType<Record<string, unknown>>) {
-          if (options.name === 'sidebar.right.tab.guide.entry') cards.push({ key: options.key, component })
-          return () => {}
-        },
+        register: registerSlot,
       },
     }
     apply(ctx as never)
-    expect(cards.map(card => card.key)).toEqual(['dsh-git-sidebar'])
-    const opened: unknown[] = []
-    const props = { kind: 'dsh-git', title: '源代码管理', description: '查看变更、提交并同步分支',
-      useTabInfo: () => ({ tab: { actions: { openTab: (...args: unknown[]) => opened.push(args) } } }) }
-    const host = document.createElement('div')
-    const root = createRoot(host)
-    act(() => { root.render(createElement(cards[0]!.component, props)) })
-    expect(host.textContent).toContain('源代码管理')
-    expect(host.textContent).toContain('查看变更、提交并同步分支')
-    expect(host.textContent).toContain('由 dsh-git-sidebar 插件提供')
-    act(() => { host.querySelector<HTMLButtonElement>('[data-sidebar-right-guide-entry="dsh-git"]')!.click() })
-    act(() => { root.unmount() })
-    expect(opened).toEqual([['dsh-git', { replaceTab: true }]])
+    const definition = registerTab.mock.calls[0]![0]
+    expect(definition).toMatchObject({ id: 'dsh-git-sidebar', kind: 'dsh-git' })
+    const guide = definition.guide![0]!
+    expect(guide).toMatchObject({ id: 'git', order: 20, icon: expect.any(Function) })
+    expect(guide.title()).toBe('源代码管理')
+    expect(guide.description?.()).toBe('查看变更、提交并同步分支')
+    expect(registerSlot.mock.calls.map(([options]) => options.name)).not.toContain('sidebar.right.tab.guide.entry')
   })
 })
 
