@@ -6,7 +6,7 @@
  * file or a history row opens a diff modal. File rows and history rows open a
  * right-click context menu with advanced operations (open in editor, discard,
  * revert, cherry-pick, copy paths/hashes). Refresh is manual + on mount/
- * focus, plus a 5 s poll while the tab is visible (no file watcher — KISS).
+ * focus, plus a 5 s local poll and a 30 s remote fetch while visible.
  */
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode, type UIEvent } from 'react'
 import {
@@ -230,6 +230,7 @@ function memoryFor(scope: SessionScope): ViewMemory {
 const LOAD_MORE_THRESHOLD = 48
 /** Background status poll interval while the panel is visible. */
 const AUTO_REFRESH_MS = 5000
+const AUTO_FETCH_MS = 30_000
 
 /** Start a worktree draft on a new branch based on the current branch. */
 export function defaultWorktreeDraft(currentBranch: string, pathPrefix: string) {
@@ -266,6 +267,7 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
   const [status, setStatus] = useState<GitStatusResult | null>(snapshot?.status ?? null)
   const [loading, setLoading] = useState(snapshot === undefined)
   const [error, setError] = useState<string | null>(null)
+  const [remoteError, setRemoteError] = useState<string | null>(null)
   const [branchNames, setBranchNames] = useState<string[]>(snapshot?.branchNames ?? [])
   const [logEntries, setLogEntries] = useState<GitLogEntry[]>(snapshot?.logEntries ?? [])
   const [stashEntries, setStashEntries] = useState<GitStashEntry[]>(snapshot?.stashEntries ?? [])
@@ -465,6 +467,7 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
   // visible, and re-read when the window regains focus. Skipped mid-operation
   // so a poll cannot race a running git command's own refresh.
   const busyRef = useRef(busy)
+  const remoteFetchRef = useRef<Promise<unknown> | null>(null)
   busyRef.current = busy || logLoadingMore
   useEffect(() => {
     const tick = (): void => {
@@ -479,6 +482,41 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
       document.removeEventListener('visibilitychange', tick)
     }
   }, [refresh])
+
+  useEffect(() => {
+    setRemoteError(null)
+    if (!status?.isRepo) return
+    let active = true
+    let fetching = false
+    const tick = async (): Promise<void> => {
+      if (document.visibilityState !== 'visible' || busyRef.current || fetching) return
+      fetching = true
+      const request = api.gitFetch(scope)
+      remoteFetchRef.current = request
+      try {
+        await request
+        if (active) {
+          setRemoteError(null)
+          await refresh(true)
+        }
+      } catch (reason) {
+        if (active) setRemoteError(`${t('fetchError')}: ${reason instanceof Error ? reason.message : String(reason)}`)
+      } finally {
+        fetching = false
+        if (remoteFetchRef.current === request) remoteFetchRef.current = null
+      }
+    }
+    void tick()
+    const timer = setInterval(() => { void tick() }, AUTO_FETCH_MS)
+    window.addEventListener('focus', tick)
+    document.addEventListener('visibilitychange', tick)
+    return () => {
+      active = false
+      clearInterval(timer)
+      window.removeEventListener('focus', tick)
+      document.removeEventListener('visibilitychange', tick)
+    }
+  }, [refresh, status?.isRepo])
 
   /** Append the next history page (lazy: only when the user asks for more). */
   const loadMoreLog = async (): Promise<void> => {
@@ -705,6 +743,7 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
     setCommitError(null)
     try {
       if (action === 'push') { await api.gitPush(scope); await refresh(); return }
+      await remoteFetchRef.current?.catch(() => {})
       await api.gitFetch(scope, action === 'fetch-all')
       if (action !== 'sync') { await refresh(); return }
       const fresh = await api.gitStatus(scope)
@@ -1171,6 +1210,7 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
       {/* Only the first load shows a placeholder; later refreshes swap data in place so the panel doesn't jump. */}
       {loading && status === null && <div className={css.gitPlaceholder}>{t('loading')}</div>}
       {!loading && error !== null && <div className={css.gitError}>{error}</div>}
+      {remoteError !== null && <div className={css.gitError} role="alert">{remoteError}</div>}
       {!loading && status !== null && !status.isRepo && (
         <div className={css.gitPlaceholder}>{t('notRepo')}</div>
       )}
@@ -1205,7 +1245,7 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
                   <div className={css.gitClean}>
                     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="9" /><path d="M8 12l3 3 5-6" /></svg>
                     <span className={css.gitCleanTitle}>{t('cleanTree')}</span>
-                    <span className={css.gitCleanMeta}>{status.ahead > 0 ? t('unpushedReminder', { count: status.ahead }) : t('synced')}</span>
+                    <span className={css.gitCleanMeta}>{status.behind > 0 ? t('behindReminder', { count: status.behind }) : status.ahead > 0 ? t('unpushedReminder', { count: status.ahead }) : t('synced')}</span>
                   </div>
                 )}
                 {changeView === 'list'

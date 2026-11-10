@@ -82,6 +82,7 @@ function discardButtons(): HTMLButtonElement[] {
 }
 
 beforeEach(() => {
+  vi.spyOn(api, 'gitFetch').mockResolvedValue({ ok: true })
   vi.spyOn(api, 'gitStatus').mockResolvedValue(dirtyStatus)
   vi.spyOn(api, 'gitBranch').mockResolvedValue({ current: 'main', names: ['main'] })
   vi.spyOn(api, 'gitLog').mockResolvedValue([])
@@ -107,6 +108,101 @@ afterEach(() => {
 })
 
 describe('GitView change groups', () => {
+  it('fetches on open and every 30 seconds, showing remote commits without syncing them', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(api, 'gitPush').mockResolvedValue({ ok: true })
+    vi.spyOn(api, 'gitFastForward').mockResolvedValue({ ok: true })
+    vi.spyOn(api, 'gitRebase').mockResolvedValue({ ok: true })
+    const { container, root } = renderGitView()
+    try {
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      expect(api.gitFetch).toHaveBeenCalledTimes(1)
+      vi.mocked(api.gitFetch).mockImplementationOnce(async () => {
+        vi.mocked(api.gitStatus).mockResolvedValue({ ...dirtyStatus, entries: [], behind: 2 })
+        return { ok: true }
+      })
+      await act(async () => { await vi.advanceTimersByTimeAsync(29_999) })
+      expect(api.gitFetch).toHaveBeenCalledTimes(1)
+      expect(container.textContent).not.toContain('↓2')
+      await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+      expect(api.gitFetch).toHaveBeenCalledTimes(2)
+      expect(api.gitFetch).toHaveBeenLastCalledWith({ sessionId: 'session-1', cwd: '/repo' })
+      expect(container.textContent).toContain('↓2')
+      expect(container.textContent).toMatch(/2 remote commit\(s\) to sync|远端有 2 个提交待同步/)
+      expect(container.textContent).not.toMatch(/Up to date with remote|已与远端同步/)
+      expect(api.gitPush).not.toHaveBeenCalled()
+      expect(api.gitFastForward).not.toHaveBeenCalled()
+      expect(api.gitRebase).not.toHaveBeenCalled()
+    } finally {
+      act(() => { root.unmount() })
+      container.remove()
+      vi.useRealTimers()
+    }
+  })
+
+  it('pauses remote checks while hidden and checks when visible or focused again', async () => {
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+    vi.useFakeTimers()
+    const { container, root } = renderGitView()
+    try {
+      await act(async () => { await vi.advanceTimersByTimeAsync(60_000) })
+      expect(api.gitFetch).not.toHaveBeenCalled()
+      visibility.mockReturnValue('visible')
+      await act(async () => { document.dispatchEvent(new Event('visibilitychange')) })
+      expect(api.gitFetch).toHaveBeenCalledTimes(1)
+      await act(async () => { window.dispatchEvent(new Event('focus')) })
+      expect(api.gitFetch).toHaveBeenCalledTimes(2)
+      act(() => { root.unmount() })
+      await act(async () => { await vi.advanceTimersByTimeAsync(60_000); window.dispatchEvent(new Event('focus')) })
+      expect(api.gitFetch).toHaveBeenCalledTimes(2)
+    } finally {
+      container.remove()
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps one remote check in flight and waits for it before manual sync', async () => {
+    vi.useFakeTimers()
+    let finish!: (value: { ok: true }) => void
+    vi.mocked(api.gitFetch).mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    const { container, root } = renderGitView()
+    try {
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      await act(async () => { await vi.advanceTimersByTimeAsync(60_000); window.dispatchEvent(new Event('focus')) })
+      expect(api.gitFetch).toHaveBeenCalledTimes(1)
+      const sync = [...container.querySelectorAll('button')].find(button => /^(Sync|同步)/.test(button.textContent ?? ''))!
+      await act(async () => { sync.click() })
+      expect(api.gitFetch).toHaveBeenCalledTimes(1)
+      await act(async () => { finish({ ok: true }) })
+      expect(api.gitFetch).toHaveBeenCalledTimes(2)
+    } finally {
+      act(() => { root.unmount() })
+      container.remove()
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps local data and a fetch error until a later remote check succeeds', async () => {
+    vi.useFakeTimers()
+    vi.mocked(api.gitFetch).mockRejectedValueOnce(new Error('offline'))
+    const { container, root } = renderGitView()
+    try {
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      expect(container.textContent).toContain('unstaged.ts')
+      expect(container.textContent).toContain('offline')
+      await act(async () => { await vi.advanceTimersByTimeAsync(5_000) })
+      expect(container.textContent).toContain('offline')
+      vi.mocked(api.gitStatus).mockResolvedValue({ ...dirtyStatus, behind: 3 })
+      await act(async () => { await vi.advanceTimersByTimeAsync(25_000) })
+      expect(container.textContent).not.toContain('offline')
+      expect(container.textContent).toContain('↓3')
+    } finally {
+      act(() => { root.unmount() })
+      container.remove()
+      vi.useRealTimers()
+    }
+  })
+
   it('previews every full history ref on hover without changing row activation', async () => {
     const names = ['polish/service-knowledge-and-price', 'origin/polish/service-knowledge-and-price', 'origin/main', 'main', 'v0.2.0']
     vi.mocked(api.gitLog).mockResolvedValue([{ ...logEntry, refs: `HEAD -> ${names[0]}, ${names.slice(1, 4).join(', ')}, tag: v0.2.0, main` }, { ...logEntry, hashFull: '2'.repeat(40) }])
@@ -180,7 +276,7 @@ describe('GitView change groups', () => {
         expect(wheel(-50)).toBe(false)
         expect(content.style.transform).toBe('')
       }
-      expect(api.gitLog).toHaveBeenCalledTimes(1)
+      expect(api.gitLog).toHaveBeenCalledTimes(2)
       expect(container.querySelector('textarea')!.style.transform).toBe('')
     } finally {
       vi.useRealTimers()
@@ -603,7 +699,6 @@ describe('GitView change groups', () => {
       ...dirtyStatus,
       entries: [],
     }
-    vi.mocked(api.gitStatus).mockResolvedValueOnce(dirtyStatus).mockResolvedValue(cleanTracked)
     const { container, root } = renderGitView()
     try {
       await flush()
@@ -613,12 +708,13 @@ describe('GitView change groups', () => {
       expect(document.body.textContent).toMatch(/Discard all 3 uncommitted changes|放弃全部 3 项未提交更改/)
       expect(document.body.textContent).toMatch(/delete added and untracked files|删除已 Add 和未 Add 的新增文件/)
 
+      vi.mocked(api.gitStatus).mockResolvedValue(cleanTracked)
       const confirm = discardButtons().at(-1)!
       await act(async () => { confirm.click(); await Promise.resolve() })
       await flush()
 
       expect(api.gitDiscardAll).toHaveBeenCalledWith({ sessionId: 'session-1', cwd: '/repo' })
-      expect(api.gitStatus).toHaveBeenCalledTimes(2)
+      expect(api.gitStatus).toHaveBeenCalledTimes(3)
       expect(container.textContent).not.toContain('staged.ts')
       expect(container.textContent).not.toContain('unstaged.ts')
       expect(container.textContent).not.toContain('new.ts')
@@ -731,8 +827,8 @@ describe('GitView stash', () => {
       await flush()
 
       expect(api.gitStash).toHaveBeenCalledWith({ sessionId: 'session-1', cwd: '/repo' })
-      expect(api.gitStatus).toHaveBeenCalledTimes(2)
-      expect(api.gitStashList).toHaveBeenCalledTimes(2)
+      expect(api.gitStatus).toHaveBeenCalledTimes(3)
+      expect(api.gitStashList).toHaveBeenCalledTimes(3)
     } finally {
       act(() => { root.unmount() })
       container.remove()
@@ -751,7 +847,7 @@ describe('GitView stash', () => {
       await act(async () => { menuButton(['Commit as WIP', '提交为 WIP']).click(); await Promise.resolve() })
       await flush()
       expect(api.gitWipCommit).toHaveBeenCalledWith({ sessionId: 'session-1', cwd: '/repo' })
-      expect(api.gitStatus).toHaveBeenCalledTimes(2)
+      expect(api.gitStatus).toHaveBeenCalledTimes(3)
 
       vi.mocked(api.gitLog).mockResolvedValue([{ ...logEntry, refs: 'HEAD -> main' }])
       openMoreMenu()
@@ -804,7 +900,7 @@ describe('GitView stash', () => {
       await flush()
       await act(async () => { buttons(['Sync', '同步'])[0]!.click(); await Promise.resolve() })
       await flush()
-      expect(api.gitFetch).toHaveBeenCalledTimes(1)
+      expect(api.gitFetch).toHaveBeenCalledTimes(2)
       expect(api.gitPush).not.toHaveBeenCalled()
       expect(document.body.textContent).toMatch(/Push WIP commit|推送 WIP 提交/)
 
@@ -986,7 +1082,7 @@ describe('GitView tags', () => {
       await flush()
 
       expect(api.gitTagCreate).toHaveBeenCalledWith({ sessionId: 'session-1', cwd: '/repo' }, 'v1.0.0', '', undefined)
-      expect(api.gitTags).toHaveBeenCalledTimes(2)
+      expect(api.gitTags).toHaveBeenCalledTimes(3)
       expect(tagInput('v1.2.0')).toBeUndefined()
     } finally {
       act(() => { root.unmount() })
