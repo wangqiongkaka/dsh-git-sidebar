@@ -1492,7 +1492,7 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
             }}
             portal
             align="start"
-            getAnchorRect={() => (fileMenu === null ? null : new DOMRect(fileMenu.x, fileMenu.y, 0, 0))}
+            anchorPoint={fileMenu === null ? undefined : { x: fileMenu.x, y: fileMenu.y }}
             anchor={<span />}
           />
 
@@ -1529,7 +1529,7 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
             }}
             portal
             align="start"
-            getAnchorRect={() => (stashMenu === null ? null : new DOMRect(stashMenu.x, stashMenu.y, 0, 0))}
+            anchorPoint={stashMenu === null ? undefined : { x: stashMenu.x, y: stashMenu.y }}
             anchor={<span />}
           />
 
@@ -1571,7 +1571,7 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
             }}
             portal
             align="start"
-            getAnchorRect={() => (tagMenu === null ? null : new DOMRect(tagMenu.x, tagMenu.y, 0, 0))}
+            anchorPoint={tagMenu === null ? undefined : { x: tagMenu.x, y: tagMenu.y }}
             anchor={<span />}
           />
 
@@ -1661,7 +1661,7 @@ function GitViewContent(props: Parameters<typeof GitView>[0]) {
             portal
             align="start"
             compact
-            getAnchorRect={() => (historyMenu === null ? null : new DOMRect(historyMenu.x, historyMenu.y, 0, 0))}
+            anchorPoint={historyMenu === null ? undefined : { x: historyMenu.x, y: historyMenu.y }}
             anchor={<span />}
           />
 

@@ -25,7 +25,7 @@
 
 ## 安装
 
-本插件需要宿主提供 `connection.fetch.register`、`Regular` 图标导出，`sidebarRightTabs`、`sidebar.right.pane.tab` 接口，以及打开 Worktree 时使用的 `workspaces.create`、`sessions.create` 和 `uiWorkspace.openSession`，以及删除 Worktree 时使用的 `workspaces.delete`。宿主的 `workingDirectory` 服务及会话列表中的 `workingDirectory` 投影为可选，缺少时按会话原始目录工作。开发依赖的 `link:` 指向相邻的 `deepseek-harness` 目录；目录位置不同时需先调整开发链接，打包产物不依赖该路径。
+本插件需要宿主提供 `connection.fetch.register`、`Regular` 图标导出，`sidebarRightTabs`、`sidebar.right.pane.tab` 接口，以及打开 Worktree 时使用的 `workspaces.create`、`sessions.create` 和 `uiWorkspace.openSession`，以及删除 Worktree 时使用的 `workspaces.delete`。宿主的 `workingDirectory` 服务及会话列表中的 `workingDirectory` 投影为可选，缺少时按会话原始目录工作。开发依赖来自 npm 上的 `@deepseek-ai` 包（`0.2.2-rc.3` 与 `cordis 4.0.4`），无需相邻的宿主源码检出。
 
 在插件目录安装依赖并打包：
 
@@ -40,7 +40,7 @@ pnpm pack
 从 DSH 源码目录安装打包产物：
 
 ```sh
-pnpm dsh plugin --profile web add file:/绝对路径/dsh-git-sidebar-0.1.11.tgz
+pnpm dsh plugin --profile web add file:/绝对路径/dsh-git-sidebar-0.1.12.tgz
 ```
 
 使用已安装的 DSH CLI 时去掉前面的 `pnpm`。重新启动对应 Web 服务后，关闭旧标签页，重新打开终端打印的 URL，在引导页选择「源代码管理」。已有标签页时可通过标签栏的「+」回到引导页。
@@ -55,11 +55,9 @@ pnpm dsh plugin --profile web add file:/绝对路径/dsh-git-sidebar-0.1.11.tgz
 
 ## 验证
 
-本次开发的 `pnpm typecheck`、`pnpm test`（90 项）和 `pnpm build` 均已通过。构建仍有 tsdown 配置弃用、CommonJS 格式建议及依赖打包提示。完整测试需要为测试进程临时提供 Git 作者／提交者身份和 `init.defaultBranch=main`；首次运行分别因缺少身份、默认分支不符失败，未修改全局 Git 配置。
+本次开发的 `pnpm typecheck`、`pnpm test`（90 项）和 `pnpm build` 均已通过，`pnpm pack` 产出的 tgz 含全部 `lib/` 产物。开发依赖全部改用 npm 上的 `@deepseek-ai` 发布包后，npm 包侧有三处差异已适配：`Menu` 的坐标锚点改用 `anchorPoint`（与运行时行为等价）、路由测试为 `fetch` 补传 `browserPeer` 参数、Tooltip 悬停测试改派 `pointerover` / `pointerenter`（npm 版监听 pointer 事件）并 stub `matchMedia`。完整测试需要为测试进程临时提供 Git 作者／提交者身份和 `init.defaultBranch=main`。
 
-新增组件测试覆盖打开即 Fetch、可见页面每 30 秒检查、Fetch 后显示远端落后数量、干净工作区的待同步提示、隐藏页面暂停和返回页面恢复、卸载后清理监听与定时器、慢请求不重叠、手动同步等待后台 Fetch，以及网络失败后保留本地列表、显示错误并在下个周期恢复。自动检查不调用快进、Rebase 或 Push。其余现有测试涵盖真实临时 Git 仓库、路由认证和参数校验、Worktree、差异及列表交互。
-
-本地无界面浏览器使用真实 GitView 组件、宿主主题样式和模拟接口，推进 30 秒后核对 `↓2` 与「远端有 2 个提交待同步」的展示、窄宽度下无横向溢出和无页面脚本错误。未安装到运行中的 DSH，未实测真实远端认证、手机或远程隧道；未修改宿主。
+现有测试涵盖真实临时 Git 仓库、路由认证和参数校验、Worktree、差异、历史 Tooltip 及列表交互。未安装到运行中的 DSH 实测；未修改宿主。
 
 ## 许可证
 

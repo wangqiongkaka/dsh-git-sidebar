@@ -210,6 +210,7 @@ describe('GitView change groups', () => {
       observe() {}
       disconnect() {}
     })
+    vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener() {}, removeEventListener() {} }))
     const { container, root } = renderGitView()
     try {
       await flush()
@@ -218,11 +219,17 @@ describe('GitView change groups', () => {
       expect(refs.textContent).toBe(names.join(''))
       expect(rows[1]!.querySelector('span[title=""]')).toBeNull()
       expect(document.querySelector('[role="tooltip"]')).toBeNull()
-      act(() => { refs.firstElementChild!.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })) })
+      act(() => {
+        refs.firstElementChild!.dispatchEvent(new PointerEvent('pointerover', { bubbles: true, pointerType: 'mouse' }))
+        refs.firstElementChild!.dispatchEvent(new PointerEvent('pointerenter', { bubbles: true, pointerType: 'mouse' }))
+      })
       const tooltip = document.querySelector('[role="tooltip"]')!
       expect(tooltip.textContent).toBe(names.join('\n'))
       expect(tooltip.parentElement).toBe(document.body)
-      act(() => { refs.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body })) })
+      act(() => {
+        refs.dispatchEvent(new PointerEvent('pointerout', { bubbles: true, pointerType: 'mouse' }))
+        refs.dispatchEvent(new PointerEvent('pointerleave', { bubbles: true, pointerType: 'mouse' }))
+      })
       expect(document.querySelector('[role="tooltip"]')).toBeNull()
       const onOpenDiff = vi.fn()
       act(() => {

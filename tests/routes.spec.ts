@@ -30,7 +30,7 @@ const server = createServer(async (req, res) => {
   const response = await connection.createSharedFetchHandler('/api').fetch(new Request(`http://${req.headers.host}${req.url}`, {
     method: req.method!, headers: { 'content-type': 'application/json', cookie: 'test-owner=1' },
     ...(req.method === 'POST' ? { body: Readable.toWeb(req) as ReadableStream<Uint8Array>, duplex: 'half' } : {}),
-  }))
+  }), connection.browserPeer)
   const unread = !req.readableEnded
   res.writeHead(response.status, { ...Object.fromEntries(response.headers), ...(unread ? { connection: 'close' } : {}) })
   res.end(Buffer.from(await response.arrayBuffer()))
@@ -172,7 +172,7 @@ it('keeps Connection authentication and bounded JSON parsing', async () => {
   expect((await fetch(path, { method: 'POST', headers: { cookie: 'test-owner=1' }, body: '{' })).status).toBe(400)
   for (const body of ['{', 'x'.repeat((1 << 20) + 1), 'x'.repeat(2 << 20)]) {
     const init = { method: 'POST', body: new Blob([body]).stream(), duplex: 'half' }
-    const response = await connection.createSharedFetchHandler('/api').fetch(new Request(path, init))
+    const response = await connection.createSharedFetchHandler('/api').fetch(new Request(path, init), connection.browserPeer)
     expect(response.status).toBe(400)
     expect(await response.json()).toMatchObject({ ok: false, error: { code: 'bad-request' } })
   }
